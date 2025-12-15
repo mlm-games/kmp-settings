@@ -13,5 +13,10 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "multiplatform-library-template"
-include(":library")
+rootProject.name = "kmp-settings"
+
+include(
+  ":settings-core",
+  ":settings-ui-compose",
+  ":settings-ksp",
+)

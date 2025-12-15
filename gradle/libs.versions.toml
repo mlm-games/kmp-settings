@@ -1,14 +1,20 @@
 [versions]
-agp = "8.13.0"
-kotlin = "2.2.20"
+agp = "8.7.3"
+kotlin = "2.1.0"
 android-minSdk = "24"
-android-compileSdk = "36"
+android-compileSdk = "35"
 vanniktechMavenPublish = "0.34.0"
+ksp = "2.1.0-1.0.29"
+compose = "1.7.3"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 
 [plugins]
+composeGradle = { id = "org.jetbrains.compose", version.ref = "compose" }
+kotlinComposePlugin = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }
