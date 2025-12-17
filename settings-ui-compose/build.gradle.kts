@@ -31,3 +31,8 @@ kotlin {
         }
     }
 }
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+}

@@ -12,3 +12,8 @@ dependencies {
 kotlin {
   jvmToolchain(17)
 }
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+}
