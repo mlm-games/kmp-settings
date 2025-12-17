@@ -9,7 +9,7 @@ plugins {
 kotlin {
     androidLibrary {
         namespace = "io.github.mlmgames.settings.core"
-        compileSdk = 35
+        compileSdk = 36
         minSdk = 24
         withJava()
     }
@@ -23,10 +23,10 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                implementation("androidx.datastore:datastore:1.2.0")
-                implementation("androidx.datastore:datastore-preferences:1.2.0")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-                implementation("com.squareup.okio:okio:3.10.2")
+                implementation(libs.datastore)
+                implementation(libs.datastore.preferences)
+                implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.okio)
             }
         }
         commonTest {
