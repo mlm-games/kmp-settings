@@ -18,10 +18,7 @@ import io.github.mlmgames.settings.ui.dialogs.SliderSettingDialog
 /**
  * Generic "auto UI" for settings based on schema metadata.
  *
- * Assumptions (by design):
- * - TOGGLE uses Boolean properties
- * - DROPDOWN uses Int index properties
- * - SLIDER uses Float properties (or Int; we convert)
+ * To use as an example or for reference only
  */
 @Composable
 fun <T> AutoSettingsScreen(
