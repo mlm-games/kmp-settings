@@ -10,7 +10,7 @@ plugins {
 
 kotlin {
     androidLibrary {
-        namespace = "io.github.iremote.settings.ui"
+        namespace = "io.github.mlmgames.settings.ui"
         compileSdk = 35
         minSdk = 24
     }

@@ -8,7 +8,7 @@ plugins {
 
 kotlin {
     androidLibrary {
-        namespace = "io.github.iremote.settings.core"
+        namespace = "io.github.mlmgames.settings.core"
         compileSdk = 35
         minSdk = 24
         withJava()
