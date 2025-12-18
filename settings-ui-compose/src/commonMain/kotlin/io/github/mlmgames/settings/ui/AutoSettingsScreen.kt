@@ -15,6 +15,7 @@ import io.github.mlmgames.settings.ui.components.*
 import io.github.mlmgames.settings.ui.dialogs.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.reflect.KClass
 
 /**
@@ -77,7 +78,7 @@ fun <T> AutoSettingsScreen(
     }
 
     // Handle setting change with validation and confirmation
-    val handleSetValue: (SettingField<T, *>, Any) -> Unit = { field, newValue ->
+    val handleSetValue: (SettingField<T, *>, Any) -> Unit = handleSetValue@{ field, newValue ->
         val meta = field.meta
 
         // Validate if rules exist
@@ -104,7 +105,7 @@ fun <T> AutoSettingsScreen(
     }
 
     // Handle button actions
-    val handleAction: (SettingField<T, *>) -> Unit = { field ->
+    val handleAction: (SettingField<T, *>) -> Unit = handleAction@{ field ->
         val meta = field.meta ?: return@handleAction
         val actionClass = meta.actionClass ?: return@handleAction
 
@@ -219,7 +220,7 @@ fun <T> AutoSettingsScreen(
                                     val intField = field as? SettingField<T, Int>
 
                                     val subtitle = when {
-                                        floatField != null -> "%.1f".format(floatField.get(value))
+                                        floatField != null -> floatField.get(value).roundToOneDecimal()
                                         intField != null -> intField.get(value).toString()
                                         else -> ""
                                     }
@@ -383,3 +384,7 @@ private data class PendingConfirmation<T>(
     val value: Any,
     val config: ConfirmationConfig,
 )
+
+fun Float.roundToOneDecimal(): String {
+    return ((this * 10.0).roundToInt() / 10.0).toString()
+}
