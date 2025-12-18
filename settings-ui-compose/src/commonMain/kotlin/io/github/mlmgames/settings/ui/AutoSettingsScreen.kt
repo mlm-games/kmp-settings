@@ -176,7 +176,7 @@ fun <T> AutoSettingsScreen(
                             val customHandler = customHandlerMap[meta.type]
                             if (customHandler != null) {
                                 @Suppress("UNCHECKED_CAST")
-                                (customHandler as CustomTypeHandler<T>).render(
+                                customHandler.render(
                                     field, meta, value, enabled, onSet
                                 )
                                 return@forEach
