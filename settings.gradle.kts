@@ -16,7 +16,7 @@ dependencyResolutionManagement {
 rootProject.name = "kmp-settings"
 
 include(
-  ":settings-core",
-  ":settings-ui-compose",
-  ":settings-ksp",
+    ":settings-core",
+    ":settings-ui-compose",
+    ":settings-ksp",
 )

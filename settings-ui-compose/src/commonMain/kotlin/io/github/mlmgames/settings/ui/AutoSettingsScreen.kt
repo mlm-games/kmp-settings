@@ -2,173 +2,384 @@ package io.github.mlmgames.settings.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.mlmgames.settings.core.*
-import io.github.mlmgames.settings.ui.components.SettingsItem
-import io.github.mlmgames.settings.ui.components.SettingsSection
-import io.github.mlmgames.settings.ui.components.SettingsToggle
-import io.github.mlmgames.settings.ui.dialogs.DropdownSettingDialog
-import io.github.mlmgames.settings.ui.dialogs.SliderSettingDialog
+import io.github.mlmgames.settings.core.actions.ActionRegistry
+import io.github.mlmgames.settings.core.annotations.SettingAction
+import io.github.mlmgames.settings.core.annotations.ValidationResult
+import io.github.mlmgames.settings.core.types.*
+import io.github.mlmgames.settings.ui.components.*
+import io.github.mlmgames.settings.ui.dialogs.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.reflect.KClass
 
 /**
- * Generic "auto UI" for settings based on schema metadata.
- *
- * To use as an example or for reference only
+ * Configuration for custom setting type rendering.
+ */
+data class CustomTypeHandler<T>(
+    val typeClass: KClass<*>,
+    val render: @Composable (
+        field: SettingField<T, *>,
+        meta: SettingMeta,
+        value: T,
+        enabled: Boolean,
+        onSet: (name: String, value: Any) -> Unit,
+    ) -> Unit
+)
+
+/**
+ * Configuration for category display.
+ */
+data class CategoryConfig(
+    val categoryClass: KClass<*>,
+    val title: String,
+    val titleRes: Int = 0,
+)
+
+/**
+ * Auto-generated settings screen from schema.
  */
 @Composable
 fun <T> AutoSettingsScreen(
-  schema: SettingsSchema<T>,
-  value: T,
-  onSet: (name: String, value: Any) -> Unit,
-  modifier: Modifier = Modifier,
+    schema: SettingsSchema<T>,
+    value: T,
+    onSet: (name: String, value: Any) -> Unit,
+    onAction: suspend (KClass<out SettingAction>) -> Unit = {},
+    modifier: Modifier = Modifier,
+    categoryConfigs: List<CategoryConfig> = emptyList(),
+    customTypeHandlers: List<CustomTypeHandler<T>> = emptyList(),
 ) {
-  var showDropdown by remember { mutableStateOf(false) }
-  var showSlider by remember { mutableStateOf(false) }
-  var currentField by remember { mutableStateOf<SettingField<T, *>?>(null) }
+    val stringProvider = LocalStringResourceProvider.current
+    val scope = rememberCoroutineScope()
 
-  val grouped = remember(schema) { schema.groupedByCategory() }
+    // Dialog states
+    var showDropdown by remember { mutableStateOf(false) }
+    var showSlider by remember { mutableStateOf(false) }
+    var showTextInput by remember { mutableStateOf(false) }
+    var currentField by remember { mutableStateOf<SettingField<T, *>?>(null) }
 
-  LazyColumn(
-    modifier = modifier.fillMaxSize(),
-    contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp)
-  ) {
-    SettingCategory.entries.forEach { cat ->
-      val fields = grouped[cat].orEmpty()
-      if (fields.isEmpty()) return@forEach
+    // Confirmation dialog state
+    var pendingConfirmation by remember { mutableStateOf<PendingConfirmation<T>?>(null) }
 
-      item {
-        Text(
-          text = cat.name.lowercase().replaceFirstChar { it.uppercase() },
-          style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.primary
-        )
-      }
+    // Validation error state
+    var validationError by remember { mutableStateOf<String?>(null) }
 
-      item {
-        SettingsSection(title = "") {
-          // inner list
-          Column {
-            fields.forEach { f ->
-              val meta = f.meta ?: return@forEach
-              val enabled = schema.isEnabled(value, f)
+    val grouped = remember(schema) { schema.groupedByCategory() }
+    val categoryConfigMap = remember(categoryConfigs) {
+        categoryConfigs.associateBy { it.categoryClass }
+    }
+    val customHandlerMap = remember(customTypeHandlers) {
+        customTypeHandlers.associateBy { it.typeClass }
+    }
 
-              when (meta.type) {
-                SettingType.TOGGLE -> {
-                  val bf = f as? SettingField<T, Boolean>
-                  if (bf != null) {
-                    SettingsToggle(
-                      title = meta.title,
-                      description = meta.description.takeIf { it.isNotBlank() },
-                      checked = bf.get(value),
-                      enabled = enabled,
-                      onCheckedChange = { onSet(bf.name, it) }
-                    )
-                  }
+    // Handle setting change with validation and confirmation
+    val handleSetValue: (SettingField<T, *>, Any) -> Unit = { field, newValue ->
+        val meta = field.meta
+
+        // Validate if rules exist
+        if (meta?.validation != null) {
+            when (val result = meta.validate(newValue, stringProvider)) {
+                is ValidationResult.Valid -> { /* proceed */ }
+                is ValidationResult.Invalid -> {
+                    validationError = result.message
+                    return@handleSetValue
                 }
-
-                SettingType.DROPDOWN -> {
-                  val inf = f as? SettingField<T, Int>
-                  if (inf != null) {
-                    val idx = inf.get(value)
-                    SettingsItem(
-                      title = meta.title,
-                      subtitle = meta.options.getOrNull(idx) ?: "Unknown",
-                      description = meta.description.takeIf { it.isNotBlank() },
-                      enabled = enabled,
-                      onClick = { currentField = f; showDropdown = true }
-                    )
-                  }
-                }
-
-                SettingType.SLIDER -> {
-                  // support Float or Int sliders
-                  val floatField = f as? SettingField<T, Float>
-                  val intField = f as? SettingField<T, Int>
-
-                  val subtitle = when {
-                    floatField != null -> floatField.get(value).toString()
-                    intField != null -> intField.get(value).toString()
-                    else -> ""
-                  }
-
-                  SettingsItem(
-                    title = meta.title,
-                    subtitle = subtitle,
-                    description = meta.description.takeIf { it.isNotBlank() },
-                    enabled = enabled,
-                    onClick = { currentField = f; showSlider = true }
-                  )
-                }
-
-                SettingType.BUTTON -> {
-                  // UI-only, will impl it later (follow other apps)
-                  SettingsItem(
-                    title = meta.title,
-                    subtitle = null,
-                    description = meta.description.takeIf { it.isNotBlank() },
-                    enabled = enabled,
-                    onClick = { /* no-op by default */ }
-                  )
-                }
-              }
             }
-          }
         }
-      }
-    }
-  }
 
-  val cf = currentField
-  if (showDropdown && cf?.meta != null) {
-    val meta = cf.meta!!
-    val inf = cf as? SettingField<T, Int>
-    if (inf != null) {
-      DropdownSettingDialog(
-        title = meta.title,
-        options = meta.options,
-        selectedIndex = inf.get(value),
-        onDismiss = { showDropdown = false },
-        onOptionSelected = { idx ->
-          onSet(inf.name, idx)
-          showDropdown = false
+        // Check for confirmation requirement
+        if (meta?.confirmation != null) {
+            pendingConfirmation = PendingConfirmation(
+                field = field,
+                value = newValue,
+                config = meta.confirmation!!
+            )
+        } else {
+            onSet(field.name, newValue)
         }
-      )
-    } else {
-      showDropdown = false
-    }
-  }
-
-  if (showSlider && cf?.meta != null) {
-    val meta = cf.meta!!
-    val ff = cf as? SettingField<T, Float>
-    val inf = cf as? SettingField<T, Int>
-
-    val cur = when {
-      ff != null -> ff.get(value)
-      inf != null -> inf.get(value).toFloat()
-      else -> 0f
     }
 
-    SliderSettingDialog(
-      title = meta.title,
-      currentValue = cur,
-      min = meta.min,
-      max = meta.max,
-      step = meta.step,
-      onDismiss = { showSlider = false },
-      onValueSelected = { v ->
-        when {
-          ff != null -> onSet(ff.name, v)
-          inf != null -> onSet(inf.name, v.toInt())
+    // Handle button actions
+    val handleAction: (SettingField<T, *>) -> Unit = { field ->
+        val meta = field.meta ?: return@handleAction
+        val actionClass = meta.actionClass ?: return@handleAction
+
+        val action = ActionRegistry.getAction(actionClass)
+
+        if (action?.requiresConfirmation == true) {
+            pendingConfirmation = PendingConfirmation(
+                field = field,
+                value = Unit,
+                config = ConfirmationConfig(
+                    title = action.confirmationTitle,
+                    message = action.confirmationMessage,
+                    titleRes = 0,
+                    messageRes = 0,
+                    confirmText = "Confirm",
+                    confirmTextRes = 0,
+                    cancelText = "Cancel",
+                    cancelTextRes = 0,
+                    isDangerous = action.isDangerous
+                )
+            )
+        } else {
+            scope.launch { onAction(actionClass) }
         }
-        showSlider = false
-      }
-    )
-  }
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        schema.orderedCategories().forEach { categoryClass ->
+            val fields = grouped[categoryClass].orEmpty()
+            if (fields.isEmpty()) return@forEach
+
+            // Get category title
+            val categoryConfig = categoryConfigMap[categoryClass]
+            val categoryTitle = when {
+                categoryConfig?.titleRes != 0 && categoryConfig != null ->
+                    stringProvider.getString(categoryConfig.titleRes)
+                categoryConfig?.title?.isNotBlank() == true ->
+                    categoryConfig.title
+                else ->
+                    categoryClass.simpleName ?: "Unknown"
+            }
+
+            item(key = "header_${categoryClass.simpleName}") {
+                Text(
+                    text = categoryTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            item(key = "section_${categoryClass.simpleName}") {
+                SettingsSection(title = "") {
+                    Column {
+                        fields.forEach { field ->
+                            val meta = field.meta ?: return@forEach
+                            val enabled = schema.isEnabled(value, field)
+
+                            val title = meta.resolvedTitle(stringProvider)
+                            val description = meta.resolvedDescription(stringProvider)
+                                .takeIf { it.isNotBlank() }
+                            val options = meta.resolvedOptions(stringProvider)
+
+                            // Check for custom type handler
+                            val customHandler = customHandlerMap[meta.type]
+                            if (customHandler != null) {
+                                @Suppress("UNCHECKED_CAST")
+                                (customHandler as CustomTypeHandler<T>).render(
+                                    field, meta, value, enabled, onSet
+                                )
+                                return@forEach
+                            }
+
+                            // Built-in type handling
+                            when (meta.type) {
+                                Toggle::class -> {
+                                    @Suppress("UNCHECKED_CAST")
+                                    val bf = field as? SettingField<T, Boolean>
+                                    if (bf != null) {
+                                        SettingsToggle(
+                                            title = title,
+                                            description = description,
+                                            checked = bf.get(value),
+                                            enabled = enabled,
+                                            onCheckedChange = { handleSetValue(field, it) }
+                                        )
+                                    }
+                                }
+
+                                Dropdown::class -> {
+                                    @Suppress("UNCHECKED_CAST")
+                                    val intField = field as? SettingField<T, Int>
+                                    if (intField != null && options.isNotEmpty()) {
+                                        val idx = intField.get(value)
+                                        SettingsItem(
+                                            title = title,
+                                            subtitle = options.getOrNull(idx) ?: "Unknown",
+                                            description = description,
+                                            enabled = enabled,
+                                            onClick = { currentField = field; showDropdown = true }
+                                        )
+                                    }
+                                }
+
+                                Slider::class -> {
+                                    @Suppress("UNCHECKED_CAST")
+                                    val floatField = field as? SettingField<T, Float>
+                                    @Suppress("UNCHECKED_CAST")
+                                    val intField = field as? SettingField<T, Int>
+
+                                    val subtitle = when {
+                                        floatField != null -> "%.1f".format(floatField.get(value))
+                                        intField != null -> intField.get(value).toString()
+                                        else -> ""
+                                    }
+
+                                    SettingsItem(
+                                        title = title,
+                                        subtitle = subtitle,
+                                        description = description,
+                                        enabled = enabled,
+                                        onClick = { currentField = field; showSlider = true }
+                                    )
+                                }
+
+                                Button::class -> {
+                                    SettingsAction(
+                                        title = title,
+                                        description = description,
+                                        enabled = enabled,
+                                        onClick = { handleAction(field) }
+                                    )
+                                }
+
+                                TextInput::class -> {
+                                    @Suppress("UNCHECKED_CAST")
+                                    val stringField = field as? SettingField<T, String>
+                                    if (stringField != null) {
+                                        SettingsItem(
+                                            title = title,
+                                            subtitle = stringField.get(value).ifBlank { "(empty)" },
+                                            description = description,
+                                            enabled = enabled,
+                                            onClick = { currentField = field; showTextInput = true }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Dialogs
+    val cf = currentField
+    if (showDropdown && cf?.meta != null) {
+        val meta = cf.meta!!
+        @Suppress("UNCHECKED_CAST")
+        val intField = cf as? SettingField<T, Int>
+        if (intField != null) {
+            val options = meta.resolvedOptions(stringProvider)
+            DropdownSettingDialog(
+                title = meta.resolvedTitle(stringProvider),
+                options = options,
+                selectedIndex = intField.get(value),
+                onDismiss = { showDropdown = false },
+                onOptionSelected = { idx ->
+                    handleSetValue(cf, idx)
+                    showDropdown = false
+                }
+            )
+        } else {
+            showDropdown = false
+        }
+    }
+
+    if (showSlider && cf?.meta != null) {
+        val meta = cf.meta!!
+        @Suppress("UNCHECKED_CAST")
+        val floatField = cf as? SettingField<T, Float>
+        @Suppress("UNCHECKED_CAST")
+        val intField = cf as? SettingField<T, Int>
+
+        val currentVal = when {
+            floatField != null -> floatField.get(value)
+            intField != null -> intField.get(value).toFloat()
+            else -> 0f
+        }
+
+        SliderSettingDialog(
+            title = meta.resolvedTitle(stringProvider),
+            currentValue = currentVal,
+            min = meta.min,
+            max = meta.max,
+            step = meta.step,
+            onDismiss = { showSlider = false },
+            onValueSelected = { v ->
+                when {
+                    floatField != null -> handleSetValue(cf, v)
+                    intField != null -> handleSetValue(cf, v.toInt())
+                }
+                showSlider = false
+            }
+        )
+    }
+
+    if (showTextInput && cf?.meta != null) {
+        val meta = cf.meta!!
+        @Suppress("UNCHECKED_CAST")
+        val stringField = cf as? SettingField<T, String>
+        if (stringField != null) {
+            InputDialog(
+                title = meta.resolvedTitle(stringProvider),
+                label = meta.resolvedTitle(stringProvider),
+                value = stringField.get(value),
+                onDismiss = { showTextInput = false },
+                onConfirm = { newValue ->
+                    handleSetValue(cf, newValue)
+                    showTextInput = false
+                },
+                validator = { input ->
+                    if (meta.validation != null) {
+                        meta.validate(input, stringProvider) is ValidationResult.Valid
+                    } else {
+                        true
+                    }
+                }
+            )
+        } else {
+            showTextInput = false
+        }
+    }
+
+    // Confirmation dialog
+    pendingConfirmation?.let { pending ->
+        SettingConfirmationDialog(
+            config = pending.config,
+            onConfirm = {
+                if (pending.value == Unit) {
+                    // It's an action
+                    val actionClass = pending.field.meta?.actionClass
+                    if (actionClass != null) {
+                        scope.launch { onAction(actionClass) }
+                    }
+                } else {
+                    onSet(pending.field.name, pending.value)
+                }
+                pendingConfirmation = null
+            },
+            onDismiss = { pendingConfirmation = null }
+        )
+    }
+
+    // Validation error snackbar
+    validationError?.let { error ->
+        LaunchedEffect(error) {
+            delay(3000)
+            validationError = null
+        }
+
+        Snackbar(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(error)
+        }
+    }
 }
+
+private data class PendingConfirmation<T>(
+    val field: SettingField<T, *>,
+    val value: Any,
+    val config: ConfirmationConfig,
+)

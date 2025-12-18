@@ -6,4 +6,5 @@ plugins {
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.composeGradle) apply false
     alias(libs.plugins.kotlinComposePlugin) apply false
+    alias(libs.plugins.kotlinSerialization) apply false
 }

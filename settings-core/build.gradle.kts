@@ -1,9 +1,8 @@
-import com.android.build.api.dsl.androidLibrary
-
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.vanniktech.mavenPublish)
+    alias(libs.plugins.kotlinSerialization)
 }
 
 kotlin {
@@ -15,7 +14,6 @@ kotlin {
     }
 
     jvm()
-
     iosArm64()
     iosSimulatorArm64()
     linuxX64()
@@ -26,6 +24,8 @@ kotlin {
                 implementation(libs.datastore)
                 implementation(libs.datastore.preferences)
                 implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.serialization.json)
+                implementation(libs.kotlinx.datetime)
                 implementation(libs.okio)
             }
         }
