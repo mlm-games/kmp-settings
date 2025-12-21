@@ -8,14 +8,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun SettingsSection(
     title: String,
     modifier: Modifier = Modifier,
+    containerColor: Color = Color.Transparent,
+    tonalElevation: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -34,8 +38,8 @@ fun SettingsSection(
 
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
+            color = containerColor,
+            tonalElevation = tonalElevation,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
