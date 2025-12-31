@@ -10,7 +10,7 @@ kotlin {
         namespace = "io.github.mlmgames.settings.core"
         compileSdk = 36
         minSdk = 24
-        withJava()
+//        withJava()
     }
 
     jvm()
