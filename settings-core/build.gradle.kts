@@ -10,7 +10,14 @@ kotlin {
         namespace = "io.github.mlmgames.settings.core"
         compileSdk = 36
         minSdk = 24
-//        withJava()
+        withJava()
+
+        optimization {
+            consumerKeepRules.apply {
+                publish = true
+                files(project.file("consumer-rules.pro"))
+            }
+        }
     }
 
     jvm()
