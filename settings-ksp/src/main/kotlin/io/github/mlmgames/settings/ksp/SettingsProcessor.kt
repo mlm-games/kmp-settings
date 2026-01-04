@@ -63,6 +63,15 @@ class SettingsProcessor(
     private val stringLongMapField = ClassName(fieldsPackage, "StringLongMapField")
     private val stringIntMapField = ClassName(fieldsPackage, "StringIntMapField")
 
+    private val stringFloatMapField = ClassName(fieldsPackage, "StringFloatMapField")
+    private val stringDoubleMapField = ClassName(fieldsPackage, "StringDoubleMapField")
+    private val stringBooleanMapField = ClassName(fieldsPackage, "StringBooleanMapField")
+    private val intStringMapField = ClassName(fieldsPackage, "IntStringMapField")
+    private val intIntMapField = ClassName(fieldsPackage, "IntIntMapField")
+    private val longStringMapField = ClassName(fieldsPackage, "LongStringMapField")
+    private val longLongMapField = ClassName(fieldsPackage, "LongLongMapField")
+
+
     // Complex fields
     private val serializedField = ClassName(fieldsPackage, "SerializedField")
     private val nullableSerializedField = ClassName(fieldsPackage, "NullableSerializedField")
@@ -315,21 +324,18 @@ class SettingsProcessor(
             "kotlin.collections.Map" -> {
                 val keyArg = propType.arguments.getOrNull(0)?.type?.resolve()
                 val valueArg = propType.arguments.getOrNull(1)?.type?.resolve()
+                val keyTypeName = keyArg?.declaration?.qualifiedName?.asString()
+                val valueTypeName = valueArg?.declaration?.qualifiedName?.asString()
 
-                if (keyArg?.declaration?.qualifiedName?.asString() == "kotlin.String") {
-                    return when (valueArg?.declaration?.qualifiedName?.asString()) {
-                        "kotlin.String" -> buildSimpleFieldCode(stringMapField, modelClass, propName, keyName, metaBlock)
-                        "kotlin.Long" -> buildSimpleFieldCode(stringLongMapField, modelClass, propName, keyName, metaBlock)
-                        "kotlin.Int" -> buildSimpleFieldCode(stringIntMapField, modelClass, propName, keyName, metaBlock)
-                        else -> {
-                            if (hasSerialized) {
-                                buildSerializedFieldCode(propType, modelClass, propName, keyName, metaBlock, isNullable)
-                            } else {
-                                logger.error("Unsupported Map value type for $propName. Add @Serialized.", prop)
-                                null
-                            }
-                        }
-                    }
+                val mapFieldClass = getMapFieldClass(keyTypeName, valueTypeName)
+
+                return if (mapFieldClass != null) {
+                    buildSimpleFieldCode(mapFieldClass, modelClass, propName, keyName, metaBlock)
+                } else if (hasSerialized) {
+                    buildSerializedFieldCode(propType, modelClass, propName, keyName, metaBlock, isNullable)
+                } else {
+                    logger.error("Unsupported Map type for $propName: Map<$keyTypeName, $valueTypeName>. Add @Serialized for complex value types.", prop)
+                    null
                 }
             }
         }
@@ -725,6 +731,34 @@ class SettingsProcessor(
         s.forEachIndexed { i, c ->
             if (c.isUpperCase() && i != 0) append('_')
             append(c.lowercaseChar())
+        }
+    }
+
+    private fun getMapFieldClass(keyType: String?, valueType: String?): ClassName? {
+        return when (keyType) {
+            "kotlin.String" -> when (valueType) {
+                "kotlin.String" -> stringMapField
+                "kotlin.Int" -> stringIntMapField
+                "kotlin.Long" -> stringLongMapField
+                "kotlin.Float" -> stringFloatMapField
+                "kotlin.Double" -> stringDoubleMapField
+                "kotlin.Boolean" -> stringBooleanMapField
+                else -> null
+            }
+
+            "kotlin.Int" -> when (valueType) {
+                "kotlin.String" -> intStringMapField
+                "kotlin.Int" -> intIntMapField
+                else -> null
+            }
+
+            "kotlin.Long" -> when (valueType) {
+                "kotlin.String" -> longStringMapField
+                "kotlin.Long" -> longLongMapField
+                else -> null
+            }
+
+            else -> null
         }
     }
 }

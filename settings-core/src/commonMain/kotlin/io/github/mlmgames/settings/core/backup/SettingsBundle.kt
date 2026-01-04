@@ -22,4 +22,6 @@ data class DeviceInfo(
     val platform: String,
     val osVersion: String,
     val appVersion: String,
+    val deviceModel: String? = null,
+    val locale: String? = null,
 )

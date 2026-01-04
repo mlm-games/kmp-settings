@@ -1,8 +1,7 @@
 package io.github.mlmgames.settings.core.backup
 
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.*
 import io.github.mlmgames.settings.core.SettingField
 import io.github.mlmgames.settings.core.SettingsSchema
 import kotlinx.coroutines.flow.first
@@ -23,17 +22,20 @@ class SettingsBackupManager<T>(
         ignoreUnknownKeys = true
     }
 
+    /**
+     * Export all settings from DataStore.
+     * Reads raw preferences to avoid serialization issues with complex types.
+     */
     suspend fun export(): ExportResult {
         return try {
             val prefs = dataStore.data.first()
             val settingsMap = mutableMapOf<String, String>()
 
-            for (field in schema.fields) {
-                @Suppress("UNCHECKED_CAST")
-                val typedField = field as SettingField<T, Any?>
-                val value = typedField.read(prefs)
-                if (value != null) {
-                    settingsMap[field.keyName] = encodeValue(value)
+            // Export all preferences from DataStore directly
+            prefs.asMap().forEach { (key, value) ->
+                val encoded = encodePreferenceValue(value)
+                if (encoded != null) {
+                    settingsMap[key.name] = encoded
                 }
             }
 
@@ -52,12 +54,15 @@ class SettingsBackupManager<T>(
         }
     }
 
+    /**
+     * Import settings from a JSON backup.
+     */
     suspend fun import(jsonString: String, options: ImportOptions = ImportOptions()): ImportResult {
         return try {
             val bundle = json.decodeFromString<SettingsBundle>(jsonString)
 
             if (options.validateAppId && bundle.appId != appId) {
-                return ImportResult.Error(ImportError.APP_MISMATCH, "Settings are from a different app")
+                return ImportResult.Error(ImportError.APP_MISMATCH, "Settings are from a different app: ${bundle.appId}")
             }
 
             if (options.validateChecksum) {
@@ -68,7 +73,7 @@ class SettingsBackupManager<T>(
             }
 
             if (bundle.schemaVersion > schemaVersion) {
-                return ImportResult.Error(ImportError.VERSION_TOO_NEW, "Settings are from a newer app version")
+                return ImportResult.Error(ImportError.VERSION_TOO_NEW, "Settings are from a newer app version (schema ${bundle.schemaVersion})")
             }
 
             val applied = mutableListOf<String>()
@@ -76,27 +81,16 @@ class SettingsBackupManager<T>(
             val errors = mutableListOf<Pair<String, String>>()
 
             dataStore.edit { prefs ->
-                for ((key, encodedValue) in bundle.settings) {
-                    val field = schema.fieldByKey(key)
-
-                    if (field == null) {
-                        skipped.add(key)
-                        continue
-                    }
-
+                for ((keyName, encodedValue) in bundle.settings) {
                     try {
-                        @Suppress("UNCHECKED_CAST")
-                        val typedField = field as SettingField<T, Any?>
-                        val value = decodeValue(encodedValue)
-
-                        if (value != null) {
-                            typedField.write(prefs, value)
-                            applied.add(key)
+                        val success = writePreferenceValue(prefs, keyName, encodedValue)
+                        if (success) {
+                            applied.add(keyName)
                         } else {
-                            skipped.add(key)
+                            skipped.add(keyName)
                         }
                     } catch (e: Exception) {
-                        errors.add(key to (e.message ?: "Unknown error"))
+                        errors.add(keyName to (e.message ?: "Unknown error"))
                     }
                 }
             }
@@ -107,6 +101,9 @@ class SettingsBackupManager<T>(
         }
     }
 
+    /**
+     * Validate a backup without importing.
+     */
     fun validate(jsonString: String): ValidationResult {
         return try {
             val bundle = json.decodeFromString<SettingsBundle>(jsonString)
@@ -120,55 +117,150 @@ class SettingsBackupManager<T>(
                 issues.add("Newer schema version: ${bundle.schemaVersion} > $schemaVersion")
             }
 
-            val unknownKeys = bundle.settings.keys.filter { key ->
-                schema.fieldByKey(key) == null
-            }
-            if (unknownKeys.isNotEmpty()) {
-                issues.add("Unknown settings: ${unknownKeys.joinToString()}")
-            }
-
             val checksum = calculateChecksum(bundle.settings)
             if (checksum != bundle.checksum) {
                 issues.add("Checksum mismatch - file may be corrupted")
             }
 
+            // Count known vs unknown keys
+            val knownKeys = bundle.settings.keys.count { key ->
+                schema.fieldByKey(key) != null
+            }
+            val unknownKeys = bundle.settings.size - knownKeys
+            if (unknownKeys > 0) {
+                issues.add("$unknownKeys unknown settings will be imported anyway")
+            }
+
             ValidationResult(
-                isValid = issues.isEmpty(),
+                isValid = issues.none { it.contains("corrupted") || it.contains("Newer schema") },
                 settingsCount = bundle.settings.size,
                 schemaVersion = bundle.schemaVersion,
                 exportedAt = bundle.exportedAt,
                 issues = issues,
+                deviceInfo = bundle.deviceInfo,
             )
         } catch (e: Exception) {
-            ValidationResult(false, 0, 0, 0, listOf("Parse error: ${e.message}"))
+            ValidationResult(false, 0, 0, 0, listOf("Parse error: ${e.message}"), null)
         }
     }
 
-    private fun encodeValue(value: Any): String = when (value) {
-        is String -> "s:$value"
-        is Boolean -> "b:$value"
-        is Int -> "i:$value"
-        is Long -> "l:$value"
-        is Float -> "f:$value"
-        is Double -> "d:$value"
-        is Set<*> -> "ss:" + (value.filterIsInstance<String>()).joinToString("\u0000")
-        else -> "j:" + json.encodeToString(value)
+    /**
+     * Export settings for specific fields only.
+     */
+    suspend fun exportFields(fieldNames: Collection<String>): ExportResult {
+        return try {
+            val prefs = dataStore.data.first()
+            val settingsMap = mutableMapOf<String, String>()
+
+            for (fieldName in fieldNames) {
+                val field = schema.fieldByName(fieldName) ?: continue
+                val keyName = field.keyName
+
+                // Find the preference value by trying different key types
+                val value = findPreferenceValue(prefs, keyName)
+                if (value != null) {
+                    val encoded = encodePreferenceValue(value)
+                    if (encoded != null) {
+                        settingsMap[keyName] = encoded
+                    }
+                }
+            }
+
+            val bundle = SettingsBundle(
+                schemaVersion = schemaVersion,
+                appId = appId,
+                exportedAt = Clock.System.now().toEpochMilliseconds(),
+                deviceInfo = deviceInfoProvider?.invoke(),
+                settings = settingsMap,
+                checksum = calculateChecksum(settingsMap),
+            )
+
+            ExportResult.Success(json.encodeToString(bundle))
+        } catch (e: Exception) {
+            ExportResult.Error(e.message ?: "Export failed")
+        }
     }
 
-    private fun decodeValue(encoded: String): Any? {
-        val prefix = encoded.substringBefore(":")
-        val data = encoded.substringAfter(":")
+    /**
+     * Encode a preference value to a type-prefixed string.
+     */
+    private fun encodePreferenceValue(value: Any?): String? {
+        return when (value) {
+            is Boolean -> "b:$value"
+            is Int -> "i:$value"
+            is Long -> "l:$value"
+            is Float -> "f:$value"
+            is Double -> "d:$value"
+            is String -> "s:$value"
+            is Set<*> -> {
+                // Encode string set as JSON array
+                @Suppress("UNCHECKED_CAST")
+                val stringSet = value as? Set<String> ?: return null
+                "ss:" + json.encodeToString(stringSet.toList())
+            }
+            null -> null
+            else -> null // Unknown types are skipped
+        }
+    }
+
+    /**
+     * Write an encoded value back to preferences.
+     */
+    private fun writePreferenceValue(prefs: MutablePreferences, keyName: String, encoded: String): Boolean {
+        if (encoded.length < 2 || !encoded.contains(':')) {
+            return false
+        }
+
+        val prefix = encoded.substringBefore(':')
+        val data = encoded.substringAfter(':')
 
         return when (prefix) {
-            "s" -> data
-            "b" -> data.toBooleanStrictOrNull()
-            "i" -> data.toIntOrNull()
-            "l" -> data.toLongOrNull()
-            "f" -> data.toFloatOrNull()
-            "d" -> data.toDoubleOrNull()
-            "ss" -> if (data.isEmpty()) emptySet() else data.split("\u0000").toSet()
-            else -> null
+            "b" -> {
+                prefs[booleanPreferencesKey(keyName)] = data.toBooleanStrict()
+                true
+            }
+            "i" -> {
+                prefs[intPreferencesKey(keyName)] = data.toInt()
+                true
+            }
+            "l" -> {
+                prefs[longPreferencesKey(keyName)] = data.toLong()
+                true
+            }
+            "f" -> {
+                prefs[floatPreferencesKey(keyName)] = data.toFloat()
+                true
+            }
+            "d" -> {
+                prefs[doublePreferencesKey(keyName)] = data.toDouble()
+                true
+            }
+            "s" -> {
+                prefs[stringPreferencesKey(keyName)] = data
+                true
+            }
+            "ss" -> {
+                val list = json.decodeFromString<List<String>>(data)
+                prefs[stringSetPreferencesKey(keyName)] = list.toSet()
+                true
+            }
+            else -> false
         }
+    }
+
+    /**
+     * Find a preference value by key name, trying all possible key types.
+     */
+    private fun findPreferenceValue(prefs: Preferences, keyName: String): Any? {
+        // Try each preference type
+        prefs[booleanPreferencesKey(keyName)]?.let { return it }
+        prefs[intPreferencesKey(keyName)]?.let { return it }
+        prefs[longPreferencesKey(keyName)]?.let { return it }
+        prefs[floatPreferencesKey(keyName)]?.let { return it }
+        prefs[doublePreferencesKey(keyName)]?.let { return it }
+        prefs[stringPreferencesKey(keyName)]?.let { return it }
+        prefs[stringSetPreferencesKey(keyName)]?.let { return it }
+        return null
     }
 
     private fun calculateChecksum(settings: Map<String, String>): String =
@@ -180,8 +272,17 @@ class SettingsBackupManager<T>(
 data class ImportOptions(
     val validateAppId: Boolean = true,
     val validateChecksum: Boolean = true,
-    val skipUnknownFields: Boolean = true,
+    val mergeMode: MergeMode = MergeMode.OVERWRITE,
 )
+
+enum class MergeMode {
+    /** Overwrite all existing settings */
+    OVERWRITE,
+    /** Only import settings that don't exist */
+    KEEP_EXISTING,
+    /** Only update existing settings, don't add new ones */
+    UPDATE_ONLY,
+}
 
 sealed class ExportResult {
     data class Success(val json: String) : ExportResult()
@@ -201,4 +302,5 @@ data class ValidationResult(
     val schemaVersion: Int,
     val exportedAt: Long,
     val issues: List<String>,
+    val deviceInfo: DeviceInfo? = null,
 )
