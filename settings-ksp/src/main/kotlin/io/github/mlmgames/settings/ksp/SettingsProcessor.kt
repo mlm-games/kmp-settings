@@ -234,13 +234,7 @@ class SettingsProcessor(
         val noReset = prop.hasAnnotation(NO_RESET_ANNOTATION)
         val confirmReset = getConfirmResetMessage(prop)
 
-        val platformsValue = args["platforms"]?.value as? List<*> ?: emptyList<Any>()
-        val platformNames = platformsValue.mapNotNull { value ->
-            when (value) {
-                is KSType -> value.declaration.simpleName.asString()
-                else -> null
-            }
-        }
+        val platformNames = extractPlatformNames(args["platforms"], propName)
 
         val metaBlock = buildMetaBlock(
             title,
@@ -447,10 +441,14 @@ class SettingsProcessor(
             }
             .add("platforms = setOf(")
             .apply {
-                if (platformNames.isEmpty() || platformNames.contains("ALL")) {
+                val validPlatforms = platformNames.filter {
+                    it in listOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX")
+                }
+
+                if (validPlatforms.isEmpty()) {
                     add("%T.ALL", settingPlatformClass)
                 } else {
-                    platformNames.forEachIndexed { i, name ->
+                    validPlatforms.forEachIndexed { i, name ->
                         if (i > 0) add(", ")
                         add("%T.%L", settingPlatformClass, name)
                     }
@@ -784,4 +782,61 @@ class SettingsProcessor(
             else -> null
         }
     }
+
+    private fun extractPlatformNames(platformsArg: KSValueArgument?, propName: String): List<String> {
+        if (platformsArg == null) {
+            logger.info("$propName: platforms arg is null, using default")
+            return emptyList()
+        }
+
+        val value = platformsArg.value
+        logger.info("$propName: platforms raw value = $value (${value?.let { it::class.simpleName }})")
+
+        if (value !is List<*>) {
+            logger.warn("$propName: platforms is not a List: ${value?.let { it::class.simpleName }}")
+            return emptyList()
+        }
+
+        val names = mutableListOf<String>()
+
+        value.forEach { element ->
+            logger.info("$propName: processing element $element (${element?.let { it::class.simpleName }})")
+
+            when (element) {
+                is KSType -> {
+                    val decl = element.declaration
+                    val name = decl.simpleName.asString()
+                    logger.info("$propName: KSType -> declaration.simpleName = $name")
+
+                    val parent = decl.parentDeclaration
+                    if (parent?.qualifiedName?.asString() == "io.github.mlmgames.settings.core.annotations.SettingPlatform") {
+                        names.add(name)
+                        logger.info("$propName: Added platform: $name")
+                    } else {
+                        names.add(name)
+                        logger.info("$propName: Added platform (unverified parent): $name")
+                    }
+                }
+                is KSClassDeclaration -> {
+                    val name = element.simpleName.asString()
+                    names.add(name)
+                    logger.info("$propName: KSClassDeclaration -> $name")
+                }
+                else -> {
+                    logger.warn("$propName: Unknown element type: ${element?.let { it::class.qualifiedName }}")
+                    element?.toString()?.let { str ->
+                        val enumName = str.substringAfterLast('.')
+                        if (enumName in listOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX")) {
+                            names.add(enumName)
+                            logger.info("$propName: Extracted from toString: $enumName")
+                        }
+                    }
+                }
+            }
+        }
+
+        logger.info("$propName: Final platform names = $names")
+        return names
+    }
+
 }
