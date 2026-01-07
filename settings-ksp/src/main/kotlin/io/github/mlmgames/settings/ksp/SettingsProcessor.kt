@@ -234,8 +234,13 @@ class SettingsProcessor(
         val noReset = prop.hasAnnotation(NO_RESET_ANNOTATION)
         val confirmReset = getConfirmResetMessage(prop)
 
-        val platformsValue = args["platforms"]?.value as? List<*>
-        val platforms = platformsValue?.filterIsInstance<KSType>()?.map { it.toClassName() } ?: emptyList()
+        val platformsValue = args["platforms"]?.value as? List<*> ?: emptyList<Any>()
+        val platformNames = platformsValue.mapNotNull { value ->
+            when (value) {
+                is KSType -> value.declaration.simpleName.asString()
+                else -> null
+            }
+        }
 
         val metaBlock = buildMetaBlock(
             title,
@@ -257,7 +262,7 @@ class SettingsProcessor(
             confirmationBlock,
             noReset,
             confirmReset,
-            platforms
+            platformNames
         )
 
         return generateFieldCode(prop, propType, modelClass, propName, keyName, metaBlock, hasSerialized, resolver)
@@ -385,7 +390,7 @@ class SettingsProcessor(
         confirmationBlock: CodeBlock?,
         noReset: Boolean,
         confirmReset: String?,
-        platforms: List<ClassName>,
+        platformNames: List<String>,
     ): CodeBlock {
         return CodeBlock.builder()
             .add("%T(\n", settingMeta)
@@ -442,12 +447,12 @@ class SettingsProcessor(
             }
             .add("platforms = setOf(")
             .apply {
-                if (platforms.isEmpty()) {
+                if (platformNames.isEmpty() || platformNames.contains("ALL")) {
                     add("%T.ALL", settingPlatformClass)
                 } else {
-                    platforms.forEachIndexed { i, platform ->
+                    platformNames.forEachIndexed { i, name ->
                         if (i > 0) add(", ")
-                        add("%T", platform)
+                        add("%T.%L", settingPlatformClass, name)
                     }
                 }
             }
