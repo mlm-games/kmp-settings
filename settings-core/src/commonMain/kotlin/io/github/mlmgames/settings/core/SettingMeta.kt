@@ -1,6 +1,7 @@
 package io.github.mlmgames.settings.core
 
 import io.github.mlmgames.settings.core.annotations.SettingAction
+import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.annotations.ValidationResult
 import io.github.mlmgames.settings.core.resources.StringResourceProvider
 import io.github.mlmgames.settings.core.types.SettingTypes
@@ -48,7 +49,9 @@ data class SettingMeta(
     // Reset behavior
     val noReset: Boolean = false,
     val confirmReset: String? = null,
-) {
+
+    val platforms: Set<SettingPlatform> = setOf(SettingPlatform.ALL),
+    ) {
     val isBuiltInType: Boolean get() = SettingTypes.isBuiltIn(type)
 
     fun resolvedTitle(provider: StringResourceProvider): String =
@@ -59,6 +62,17 @@ data class SettingMeta(
 
     fun resolvedOptions(provider: StringResourceProvider): List<String> =
         if (optionsRes != 0) provider.getStringArray(optionsRes) else options
+
+    fun isVisibleOnPlatform(currentPlatform: SettingPlatform): Boolean {
+        if (platforms.contains(SettingPlatform.ALL)) return true
+        if (platforms.contains(currentPlatform)) return true
+
+        if (currentPlatform == SettingPlatform.JVM || currentPlatform == SettingPlatform.LINUX) {
+            if (platforms.contains(SettingPlatform.DESKTOP)) return true
+        }
+
+        return false
+    }
 
     fun validate(value: Any?, provider: StringResourceProvider): ValidationResult {
         val rules = validation ?: return ValidationResult.Valid

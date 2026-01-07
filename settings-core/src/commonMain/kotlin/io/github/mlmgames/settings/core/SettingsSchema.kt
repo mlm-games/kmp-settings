@@ -1,5 +1,7 @@
 package io.github.mlmgames.settings.core
 
+import io.github.mlmgames.settings.core.annotations.SettingPlatform
+import io.github.mlmgames.settings.core.platform.currentPlatform
 import kotlin.reflect.KClass
 
 /**
@@ -25,24 +27,31 @@ interface SettingsSchema<T> {
     fun uiFields(): List<SettingField<T, *>> =
         fields.filter { it.meta != null }
 
-    /** Group UI fields by category, sorted by order */
-    fun groupedByCategory(): Map<KClass<*>, List<SettingField<T, *>>> {
-        val grouped = uiFields().groupBy { it.meta!!.category }
+    /**
+     * All UI fields visible on the current platform.
+     */
+    fun visibleUiFields(platform: SettingPlatform = currentPlatform): List<SettingField<T, *>> =
+        uiFields().filter { it.meta?.isVisibleOnPlatform(platform) == true }
 
-        // Sort by category order
+    /**
+     * Group visible UI fields by category, sorted by order.
+     */
+    fun groupedByCategory(platform: SettingPlatform = currentPlatform): Map<KClass<*>, List<SettingField<T, *>>> {
+        val visibleFields = visibleUiFields(platform)
+        val grouped = visibleFields.groupBy { it.meta!!.category }
+
         val sortedEntries = grouped.entries.sortedBy { entry ->
-            uiFields()
+            visibleFields
                 .firstOrNull { it.meta?.category == entry.key }
                 ?.meta?.categoryOrder ?: Int.MAX_VALUE
         }
 
-        // Convert back to LinkedHashMap to preserve order
         return sortedEntries.associate { it.key to it.value }
     }
 
-    /** Get ordered list of categories */
-    fun orderedCategories(): List<KClass<*>> =
-        groupedByCategory().keys.toList()
+    /** Get ordered list of categories with visible fields */
+    fun orderedCategories(platform: SettingPlatform = currentPlatform): List<KClass<*>> =
+        groupedByCategory(platform).keys.toList()
 
     /** Check if a setting is enabled based on its dependency */
     fun isEnabled(model: T, field: SettingField<T, *>): Boolean {

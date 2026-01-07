@@ -3,6 +3,19 @@ package io.github.mlmgames.settings.core.annotations
 import io.github.mlmgames.settings.core.types.Toggle
 import kotlin.reflect.KClass
 
+
+/**
+ * Target platforms for a setting.
+ */
+enum class SettingPlatform {
+    ANDROID,
+    IOS,
+    DESKTOP,  // JVM + Linux
+    JVM,
+    LINUX, // Marked separately on KMP
+    ALL
+}
+
 /**
  * Marks a property as a UI-visible setting.
  *
@@ -53,4 +66,7 @@ annotation class Setting(
 
     /** Resource array for localized dropdown options */
     val optionsRes: Int = 0,
+
+    /** Platforms where this setting should be visible. Empty = ALL platforms. */
+    val platforms: Array<SettingPlatform> = [SettingPlatform.ALL],
 )

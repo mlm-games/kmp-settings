@@ -31,6 +31,7 @@ class SettingsProcessor(
 
     private val corePackage = "io.github.mlmgames.settings.core"
     private val fieldsPackage = "$corePackage.fields"
+    private val settingPlatformClass = ClassName("io.github.mlmgames.settings.core.annotations", "SettingPlatform")
 
     // Core types
     private val settingsSchema = ClassName(corePackage, "SettingsSchema")
@@ -233,26 +234,30 @@ class SettingsProcessor(
         val noReset = prop.hasAnnotation(NO_RESET_ANNOTATION)
         val confirmReset = getConfirmResetMessage(prop)
 
+        val platformsValue = args["platforms"]?.value as? List<*>
+        val platforms = platformsValue?.filterIsInstance<KSType>()?.map { it.toClassName() } ?: emptyList()
+
         val metaBlock = buildMetaBlock(
-            title = title,
-            description = description,
-            titleRes = titleRes,
-            descriptionRes = descriptionRes,
-            categoryClass = categoryClass,
-            categoryOrder = categoryOrder,
-            typeClass = typeClass,
-            keyName = keyName,
-            dependsOn = dependsOn,
-            min = min,
-            max = max,
-            step = step,
-            options = options,
-            optionsRes = optionsRes,
-            actionClass = actionClass,
-            validationBlock = validationBlock,
-            confirmationBlock = confirmationBlock,
-            noReset = noReset,
-            confirmReset = confirmReset,
+            title,
+            description,
+            titleRes,
+            descriptionRes,
+            categoryClass,
+            categoryOrder,
+            typeClass,
+            keyName,
+            dependsOn,
+            min,
+            max,
+            step,
+            options,
+            optionsRes,
+            actionClass,
+            validationBlock,
+            confirmationBlock,
+            noReset,
+            confirmReset,
+            platforms
         )
 
         return generateFieldCode(prop, propType, modelClass, propName, keyName, metaBlock, hasSerialized, resolver)
@@ -380,6 +385,7 @@ class SettingsProcessor(
         confirmationBlock: CodeBlock?,
         noReset: Boolean,
         confirmReset: String?,
+        platforms: List<ClassName>,
     ): CodeBlock {
         return CodeBlock.builder()
             .add("%T(\n", settingMeta)
@@ -434,6 +440,18 @@ class SettingsProcessor(
                     add("confirmReset = null,\n")
                 }
             }
+            .add("platforms = setOf(")
+            .apply {
+                if (platforms.isEmpty()) {
+                    add("%T.ALL", settingPlatformClass)
+                } else {
+                    platforms.forEachIndexed { i, platform ->
+                        if (i > 0) add(", ")
+                        add("%T", platform)
+                    }
+                }
+            }
+            .add("),\n")
             .unindent()
             .add(")")
             .build()

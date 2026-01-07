@@ -10,7 +10,9 @@ import androidx.compose.ui.unit.dp
 import io.github.mlmgames.settings.core.*
 import io.github.mlmgames.settings.core.actions.ActionRegistry
 import io.github.mlmgames.settings.core.annotations.SettingAction
+import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.annotations.ValidationResult
+import io.github.mlmgames.settings.core.platform.currentPlatform
 import io.github.mlmgames.settings.core.types.*
 import io.github.mlmgames.settings.ui.components.*
 import io.github.mlmgames.settings.ui.dialogs.*
@@ -43,6 +45,16 @@ data class CategoryConfig(
 
 /**
  * Auto-generated settings screen from schema.
+ *
+ * @param schema The settings schema
+ * @param value Current settings value
+ * @param onSet Callback when a setting is changed
+ * @param onAction Callback for button actions
+ * @param modifier Modifier for the screen
+ * @param platform Override platform detection (defaults to current platform)
+ * @param categoryConfigs Custom category display configuration
+ * @param customTypeHandlers Custom type renderers
+ * @param snackbarHostState External snackbar host state
  */
 @Composable
 fun <T> AutoSettingsScreen(
@@ -51,6 +63,7 @@ fun <T> AutoSettingsScreen(
     onSet: (name: String, value: Any) -> Unit,
     onAction: suspend (KClass<out SettingAction>) -> Unit = {},
     modifier: Modifier = Modifier,
+    platform: SettingPlatform = currentPlatform,
     categoryConfigs: List<CategoryConfig> = emptyList(),
     customTypeHandlers: List<CustomTypeHandler<T>> = emptyList(),
     snackbarHostState: SnackbarHostState? = null,
@@ -79,7 +92,9 @@ fun <T> AutoSettingsScreen(
     // Confirmation dialog state
     var pendingConfirmation by remember { mutableStateOf<PendingConfirmation<T>?>(null) }
 
-    val grouped = remember(schema) { schema.groupedByCategory() }
+    val grouped = remember(schema, platform) { schema.groupedByCategory(platform) }
+    val orderedCategories = remember(schema, platform) { schema.orderedCategories(platform) }
+
     val categoryConfigMap = remember(categoryConfigs) {
         categoryConfigs.associateBy { it.categoryClass }
     }
@@ -156,7 +171,7 @@ fun <T> AutoSettingsScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            schema.orderedCategories().forEach { categoryClass ->
+            orderedCategories.forEach { categoryClass ->
                 val fields = grouped[categoryClass].orEmpty()
                 if (fields.isEmpty()) return@forEach
 

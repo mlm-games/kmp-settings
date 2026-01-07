@@ -8,7 +8,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.mlmgames.settings.core.SettingsSchema
+import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.managers.ResetManager
+import io.github.mlmgames.settings.core.platform.currentPlatform
 import kotlinx.coroutines.launch
 import kotlin.reflect.KClass
 
@@ -23,6 +25,7 @@ fun <T> ResetSettingsDialog(
     resetManager: ResetManager<T>,
     schema: SettingsSchema<T>,
     categoryTitles: Map<KClass<*>, String> = emptyMap(),
+    platform: SettingPlatform = currentPlatform,
     onDismiss: () -> Unit,
     onReset: () -> Unit,
 ) {
@@ -31,7 +34,7 @@ fun <T> ResetSettingsDialog(
     var isResetting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val categories = remember { schema.orderedCategories() }
+    val categories = remember(platform) { schema.orderedCategories(platform) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
