@@ -48,6 +48,7 @@ class SettingsProcessor(
     private val doubleField = ClassName(fieldsPackage, "DoubleField")
     private val stringField = ClassName(fieldsPackage, "StringField")
     private val stringSetField = ClassName(fieldsPackage, "StringSetField")
+    private val unitField = ClassName(fieldsPackage, "UnitField")
 
     // Nullable fields
     private val nullableBooleanField = ClassName(fieldsPackage, "NullableBooleanField")
@@ -715,6 +716,7 @@ class SettingsProcessor(
                 "kotlin.Float" -> nullableFloatField
                 "kotlin.Double" -> nullableDoubleField
                 "kotlin.String" -> nullableStringField
+                "kotlin.Unit" -> unitField
                 else -> null
             }
         } else {
@@ -725,6 +727,7 @@ class SettingsProcessor(
                 "kotlin.Float" -> floatField
                 "kotlin.Double" -> doubleField
                 "kotlin.String" -> stringField
+                "kotlin.Unit" -> unitField
                 else -> null
             }
         }
