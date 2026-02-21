@@ -10,7 +10,7 @@ kotlin {
     androidLibrary {
         namespace = "io.github.mlmgames.settings.ui"
         compileSdk = 36
-        minSdk = 24
+        minSdk = 21
     }
 
     jvm()

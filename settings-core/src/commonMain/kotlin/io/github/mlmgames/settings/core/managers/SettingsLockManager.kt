@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.time.ExperimentalTime::class)
+
 package io.github.mlmgames.settings.core.managers
 
 import androidx.datastore.core.DataStore
@@ -5,7 +7,7 @@ import androidx.datastore.preferences.core.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 class SettingsLockManager(
     private val dataStore: DataStore<Preferences>,
