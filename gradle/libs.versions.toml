@@ -12,7 +12,7 @@ okio = "3.16.4"
 symbolProcessingApi = "2.3.5"
 vanniktechMavenPublish = "0.36.0"
 ksp = "2.3.5"
-compose = "1.10.1"
+compose = "1.11.0-alpha02"
 
 [libraries]
 datastore = { module = "androidx.datastore:datastore", version.ref = "datastorePreferences" }
@@ -25,6 +25,12 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 symbol-processing-api = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = "symbolProcessingApi" }
+
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose" }
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose" }
+compose-ui-tooling-preview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "compose" }
 
 [plugins]
 composeGradle = { id = "org.jetbrains.compose", version.ref = "compose" }
