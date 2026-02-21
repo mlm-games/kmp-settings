@@ -32,7 +32,7 @@ dependencies {
 ```
 
 **Requirements:**
-- Android minSdk 24
+- Android minSdk 21
 - Java 17+ for KSP processor
 
 ## Quick Start

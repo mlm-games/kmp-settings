@@ -2,7 +2,7 @@
 agp = "9.0.1"
 datastorePreferences = "1.2.0"
 kotlin = "2.3.10"
-android-minSdk = "24"
+android-minSdk = "21"
 android-compileSdk = "36"
 kotlinpoet = "2.2.0"
 kotlinxCoroutinesCore = "1.10.2"

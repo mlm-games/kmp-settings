@@ -9,7 +9,7 @@ kotlin {
     androidLibrary {
         namespace = "io.github.mlmgames.settings.core"
         compileSdk = 36
-        minSdk = 24
+        minSdk = 21
         withJava()
 
         optimization {
