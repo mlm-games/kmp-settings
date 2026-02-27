@@ -16,6 +16,9 @@ kotlin {
     jvm()
     iosArm64()
     iosSimulatorArm64()
+    wasmJs {
+        browser()
+    }
 
     sourceSets {
         commonMain {
