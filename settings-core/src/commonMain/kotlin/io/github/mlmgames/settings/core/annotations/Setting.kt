@@ -13,6 +13,7 @@ enum class SettingPlatform {
     DESKTOP,  // JVM + Linux
     JVM,
     LINUX, // Marked separately on KMP
+    WEB,   // WASM/WASM JS
     ALL
 }
 

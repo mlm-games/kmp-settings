@@ -1,6 +1,6 @@
 [versions]
 agp = "9.0.1"
-datastorePreferences = "1.2.0"
+datastorePreferences = "1.3.0-alpha06"
 kotlin = "2.3.10"
 android-minSdk = "21"
 android-compileSdk = "36"
@@ -15,7 +15,7 @@ ksp = "2.3.5"
 compose = "1.11.0-alpha02"
 
 [libraries]
-datastore = { module = "androidx.datastore:datastore", version.ref = "datastorePreferences" }
+datastore-preferences-core = { module = "androidx.datastore:datastore-preferences-core", version.ref = "datastorePreferences" }
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlinpoet = { module = "com.squareup:kotlinpoet", version.ref = "kotlinpoet" }

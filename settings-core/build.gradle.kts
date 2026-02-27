@@ -24,16 +24,23 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     linuxX64()
+    wasmJs {
+        browser()
+    }
 
     sourceSets {
         commonMain {
             dependencies {
-                implementation(libs.datastore)
-                implementation(libs.datastore.preferences)
+                implementation(libs.datastore.preferences.core)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
                 implementation(libs.okio)
+            }
+        }
+        androidMain {
+            dependencies {
+                implementation(libs.datastore.preferences)
             }
         }
         commonTest {

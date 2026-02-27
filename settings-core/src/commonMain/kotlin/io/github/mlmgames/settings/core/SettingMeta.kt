@@ -71,6 +71,10 @@ data class SettingMeta(
             if (platforms.contains(SettingPlatform.DESKTOP)) return true
         }
 
+        if (currentPlatform == SettingPlatform.WEB) {
+            if (platforms.contains(SettingPlatform.DESKTOP)) return true
+        }
+
         return false
     }
 
