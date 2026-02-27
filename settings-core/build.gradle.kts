@@ -1,8 +1,11 @@
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.kotlinSerialization)
+    id("org.jetbrains.dokka")
 }
 
 kotlin {

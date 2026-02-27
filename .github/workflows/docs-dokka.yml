@@ -34,30 +34,13 @@ jobs:
       # Generate Dokka Documentation
       - name: Generate Dokka Docs
         run: |
-          ./gradlew dokkaHtml
+          ./gradlew dokkaGeneratePublicationHtml
 
-      # Build the Kotlin/Compose Example
-      - name: Build Kotlin/Compose Example
-        run: |
-          ./gradlew :sample:composeApp:wasmJsBrowserDistribution
-
-      # Prepare a common structure for deployment
-      # Place the docs at the root and the example in /sample
-      - name: Prepare files for deployment
-        run: |
-          mkdir -p build/final
-          # Copy the docs into build/final (root of the site)
-          cp -r mediaplayer/build/dokka/html/* build/final
-
-          # Create the /sample folder in build/final
-          mkdir -p build/final/sample
-          cp -r sample/composeApp/build/dist/wasmJs/productionExecutable/* build/final/sample
-
-      # Upload to the "pages" artifact so it is available for the next job
+      # Upload docs to the "pages" artifact
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: build/final
+          path: build/dokka/html
 
   # 2) GitHub Pages Deployment 
   deploy:
@@ -65,11 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      # The final URL will be provided in the page_url output
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          path: build/final

@@ -7,4 +7,10 @@ plugins {
     alias(libs.plugins.composeGradle) apply false
     alias(libs.plugins.kotlinComposePlugin) apply false
     alias(libs.plugins.kotlinSerialization) apply false
+    alias(libs.plugins.dokka)
+}
+
+dependencies {
+    dokka(project(":settings-core"))
+    dokka(project(":settings-ui-compose"))
 }

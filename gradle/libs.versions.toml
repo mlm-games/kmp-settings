@@ -9,10 +9,11 @@ kotlinxCoroutinesCore = "1.10.2"
 kotlinxSerializationJson = "1.10.0"
 kotlinxDatetime = "0.7.1"
 okio = "3.16.4"
-symbolProcessingApi = "2.3.5"
+symbolProcessingApi = "2.3.6"
 vanniktechMavenPublish = "0.36.0"
-ksp = "2.3.5"
+ksp = "2.3.6"
 compose = "1.11.0-alpha02"
+dokka = "2.1.0"
 
 [libraries]
 datastore-preferences-core = { module = "androidx.datastore:datastore-preferences-core", version.ref = "datastorePreferences" }
@@ -41,3 +42,4 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
