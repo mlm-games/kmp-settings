@@ -10,7 +10,7 @@ plugins {
 }
 
 kotlin {
-    androidLibrary {
+    android {
         namespace = "io.github.mlmgames.settings.ui"
         compileSdk = 36
         minSdk = 21
