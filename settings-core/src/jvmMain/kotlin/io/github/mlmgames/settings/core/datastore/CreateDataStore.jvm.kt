@@ -1,8 +1,16 @@
 package io.github.mlmgames.settings.core.datastore
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.Storage
+import androidx.datastore.core.FileStorage
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.PreferencesFileSerializer
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import java.io.File
+import okio.Path.Companion.toPath
 
 /*
     Stores the settings in these locations:
@@ -40,3 +48,12 @@ private fun getAppDataDir(appName: String): File {
         }
     }
 }
+
+internal actual fun createPreferencesStorage(path: String): Storage<Preferences> =
+    FileStorage(
+        serializer = PreferencesFileSerializer,
+        produceFile = { path.toPath().toFile() }
+    )
+
+internal actual val dataStoreContext: CoroutineContext =
+    CoroutineScope(Dispatchers.IO + SupervisorJob()).coroutineContext
