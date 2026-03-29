@@ -46,32 +46,6 @@ kotlin {
                 implementation(libs.datastore.preferences)
             }
         }
-        jvmMain {
-            dependencies {
-                implementation(libs.datastore.preferences.core)
-                implementation(libs.kotlinx.coroutines.core)
-            }
-        }
-        linuxX64Main {
-            dependencies {
-                implementation(libs.datastore.preferences.core)
-                implementation(libs.datastore.core.okio)
-                implementation(libs.kotlinx.coroutines.core)
-            }
-        }
-        iosMain {
-            dependencies {
-                implementation(libs.datastore.preferences.core)
-                implementation(libs.datastore.core.okio)
-                implementation(libs.kotlinx.coroutines.core)
-            }
-        }
-        wasmJsMain {
-            dependencies {
-                implementation(libs.datastore.preferences.core)
-                implementation(libs.kotlinx.coroutines.core)
-            }
-        }
         commonTest {
             dependencies {
                 implementation(kotlin("test"))
