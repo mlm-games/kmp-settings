@@ -443,7 +443,7 @@ class SettingsProcessor(
             .add("platforms = setOf(")
             .apply {
                 val validPlatforms = platformNames.filter {
-                    it in listOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX")
+                    it in listOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX", "WEB")
                 }
 
                 if (validPlatforms.isEmpty()) {
@@ -829,7 +829,7 @@ class SettingsProcessor(
                     logger.warn("$propName: Unknown element type: ${element?.let { it::class.qualifiedName }}")
                     element?.toString()?.let { str ->
                         val enumName = str.substringAfterLast('.')
-                        if (enumName in listOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX")) {
+                        if (enumName in listOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX", "WEB")) {
                             names.add(enumName)
                             logger.info("$propName: Extracted from toString: $enumName")
                         }
