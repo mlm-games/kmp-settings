@@ -27,4 +27,19 @@ interface SettingField<T, V> {
 
     /** Write to preferences */
     fun write(prefs: MutablePreferences, value: V)
+
+    /** Convert value to UI slider float. Returns null if not applicable. */
+    fun toUiSliderValue(model: T): Float? = null
+
+    /** Convert UI slider float back to value. Returns null if not applicable. */
+    fun fromUiSliderValue(value: Float): V? = null
+
+    /** Convert value to UI dropdown index. Returns null if not applicable. */
+    fun toUiDropdownIndex(model: T): Int? = null
+
+    /** Convert UI dropdown index back to value. Returns null if not applicable. */
+    fun fromUiDropdownIndex(index: Int): V? = null
+
+    /** Get dropdown options. Returns null if not applicable. */
+    fun getDropdownOptions(): List<String>? = null
 }

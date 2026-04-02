@@ -55,6 +55,9 @@ class NullableIntField<T>(
     override fun write(prefs: MutablePreferences, value: Int?) {
         prefs[key] = value?.toLong() ?: NULL_SENTINEL
     }
+
+    override fun toUiSliderValue(model: T): Float? = getter(model)?.toFloat()
+    override fun fromUiSliderValue(value: Float): Int? = value.toInt()
 }
 
 class NullableLongField<T>(
@@ -95,6 +98,9 @@ class NullableFloatField<T>(
     override fun write(prefs: MutablePreferences, value: Float?) {
         prefs[key] = value ?: Float.NaN
     }
+
+    override fun toUiSliderValue(model: T): Float? = getter(model)
+    override fun fromUiSliderValue(value: Float): Float? = value
 }
 
 class NullableDoubleField<T>(

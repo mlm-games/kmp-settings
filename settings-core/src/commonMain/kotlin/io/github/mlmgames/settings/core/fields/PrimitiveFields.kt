@@ -30,6 +30,9 @@ class IntField<T>(
     override fun set(model: T, value: Int) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Int) { prefs[key] = value }
+
+    override fun toUiSliderValue(model: T): Float = getter(model).toFloat()
+    override fun fromUiSliderValue(value: Float): Int = value.toInt()
 }
 
 class LongField<T>(
@@ -58,6 +61,9 @@ class FloatField<T>(
     override fun set(model: T, value: Float) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Float) { prefs[key] = value }
+
+    override fun toUiSliderValue(model: T): Float = getter(model)
+    override fun fromUiSliderValue(value: Float): Float = value
 }
 
 class DoubleField<T>(

@@ -29,6 +29,18 @@ class EnumField<T, E : Enum<E>>(
     override fun write(prefs: MutablePreferences, value: E) {
         prefs[key] = value.name
     }
+
+    override fun toUiDropdownIndex(model: T): Int {
+        return getter(model).ordinal
+    }
+
+    override fun fromUiDropdownIndex(index: Int): E {
+        return enumValues.getOrNull(index) ?: defaultValue
+    }
+
+    override fun getDropdownOptions(): List<String> {
+        return enumValues.map { it.name }
+    }
 }
 
 class NullableEnumField<T, E : Enum<E>>(
@@ -57,6 +69,12 @@ class NullableEnumField<T, E : Enum<E>>(
     override fun write(prefs: MutablePreferences, value: E?) {
         prefs[key] = value?.name ?: NULL_MARKER
     }
+
+    override fun toUiDropdownIndex(model: T): Int? = getter(model)?.ordinal
+
+    override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index)
+
+    override fun getDropdownOptions(): List<String> = enumValues.map { it.name }
 }
 
 class EnumOrdinalField<T, E : Enum<E>>(
@@ -81,4 +99,10 @@ class EnumOrdinalField<T, E : Enum<E>>(
     override fun write(prefs: MutablePreferences, value: E) {
         prefs[key] = value.ordinal
     }
+
+    override fun toUiDropdownIndex(model: T): Int = getter(model).ordinal
+
+    override fun fromUiDropdownIndex(index: Int): E = enumValues.getOrNull(index) ?: defaultValue
+
+    override fun getDropdownOptions(): List<String> = enumValues.map { it.name }
 }

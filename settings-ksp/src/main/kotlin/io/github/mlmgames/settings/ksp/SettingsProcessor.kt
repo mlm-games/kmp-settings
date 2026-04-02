@@ -32,6 +32,7 @@ class SettingsProcessor(
     private val corePackage = "io.github.mlmgames.settings.core"
     private val fieldsPackage = "$corePackage.fields"
     private val settingPlatformClass = ClassName("io.github.mlmgames.settings.core.annotations", "SettingPlatform")
+    private val valueKindClass = ClassName(corePackage, "ValueKind")
 
     // Core types
     private val settingsSchema = ClassName(corePackage, "SettingsSchema")
@@ -222,6 +223,9 @@ class SettingsProcessor(
 
         val keyName = keyOverride.ifBlank { toSnakeCase(propName) }
 
+        // Determine value kind based on property type
+        val (valueKindName, enumTypeName) = computeValueKindInfo(propType, resolver)
+
         // Action handler
         val actionClass = getActionClass(prop)
 
@@ -257,7 +261,9 @@ class SettingsProcessor(
             confirmationBlock,
             noReset,
             confirmReset,
-            platformNames
+            platformNames,
+            valueKindName,
+            enumTypeName
         )
 
         return generateFieldCode(prop, propType, modelClass, propName, keyName, metaBlock, hasSerialized, resolver)
@@ -386,6 +392,8 @@ class SettingsProcessor(
         noReset: Boolean,
         confirmReset: String?,
         platformNames: List<String>,
+        valueKindName: String,
+        enumTypeName: String?,
     ): CodeBlock {
         return CodeBlock.builder()
             .add("%T(\n", settingMeta)
@@ -397,6 +405,14 @@ class SettingsProcessor(
             .add("category = %T::class,\n", categoryClass)
             .add("categoryOrder = %L,\n", categoryOrder)
             .add("type = %T::class,\n", typeClass)
+            .add("valueKind = %T.%L,\n", valueKindClass, valueKindName)
+            .apply {
+                if (enumTypeName != null) {
+                    add("enumTypeName = %S,\n", enumTypeName)
+                } else {
+                    add("enumTypeName = null,\n")
+                }
+            }
             .add("key = %S,\n", keyName)
             .add("dependsOn = %S,\n", dependsOn)
             .add("min = %Lf,\n", min)
@@ -840,6 +856,29 @@ class SettingsProcessor(
 
         logger.info("$propName: Final platform names = $names")
         return names
+    }
+
+    private fun computeValueKindInfo(propType: KSType, resolver: Resolver): Pair<String, String?> {
+        val baseType = propType.makeNotNullable()
+        val qualifiedName = baseType.declaration.qualifiedName?.asString()
+
+        return when (qualifiedName) {
+            "kotlin.Boolean" -> "BOOLEAN" to null
+            "kotlin.Int" -> "INT" to null
+            "kotlin.Long" -> "LONG" to null
+            "kotlin.Float" -> "FLOAT" to null
+            "kotlin.Double" -> "DOUBLE" to null
+            "kotlin.String" -> "STRING" to null
+            else -> {
+                val isEnum = (baseType.declaration as? KSClassDeclaration)?.classKind == ClassKind.ENUM_CLASS
+                if (isEnum) {
+                    val enumClass = baseType.toClassName()
+                    "ENUM" to "${enumClass.packageName}.${enumClass.simpleName}"
+                } else {
+                    "NONE" to null
+                }
+            }
+        }
     }
 
 }

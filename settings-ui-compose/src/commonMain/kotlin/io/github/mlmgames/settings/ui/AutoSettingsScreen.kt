@@ -17,7 +17,6 @@ import io.github.mlmgames.settings.core.types.*
 import io.github.mlmgames.settings.ui.components.*
 import io.github.mlmgames.settings.ui.dialogs.*
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import kotlin.reflect.KClass
 
 /**
@@ -203,7 +202,6 @@ fun <T> AutoSettingsScreen(
                                 val title = meta.resolvedTitle(stringProvider)
                                 val description = meta.resolvedDescription(stringProvider)
                                     .takeIf { it.isNotBlank() }
-                                val options = meta.resolvedOptions(stringProvider)
 
                                 val customHandler = customHandlerMap[meta.type]
                                 if (customHandler != null) {
@@ -215,12 +213,12 @@ fun <T> AutoSettingsScreen(
                                 when (meta.type) {
                                     Toggle::class -> {
                                         @Suppress("UNCHECKED_CAST")
-                                        val bf = field as? SettingField<T, Boolean>
-                                        if (bf != null) {
+                                        val boolField = field as? SettingField<T, Boolean>
+                                        if (boolField != null) {
                                             SettingsToggle(
                                                 title = title,
                                                 description = description,
-                                                checked = bf.get(value),
+                                                checked = boolField.get(value),
                                                 enabled = enabled,
                                                 onCheckedChange = { handleSetValue(field, it) }
                                             )
@@ -228,31 +226,27 @@ fun <T> AutoSettingsScreen(
                                     }
 
                                     Dropdown::class -> {
-                                        @Suppress("UNCHECKED_CAST")
-                                        val intField = field as? SettingField<T, Int>
-                                        if (intField != null && options.isNotEmpty()) {
-                                            val idx = intField.get(value)
-                                            SettingsItem(
-                                                title = title,
-                                                subtitle = options.getOrNull(idx) ?: "Unknown",
-                                                description = description,
-                                                enabled = enabled,
-                                                onClick = { currentField = field; showDropdown = true }
-                                            )
-                                        }
+                                        val options = field.getDropdownOptions()
+                                            ?: meta.resolvedOptions(stringProvider)
+                                        val idx = field.toUiDropdownIndex(value) ?: 0
+                                        SettingsItem(
+                                            title = title,
+                                            subtitle = options.getOrNull(idx) ?: "Unknown",
+                                            description = description,
+                                            enabled = enabled,
+                                            onClick = { currentField = field; showDropdown = true }
+                                        )
                                     }
 
                                     Slider::class -> {
-                                        @Suppress("UNCHECKED_CAST")
-                                        val floatField = field as? SettingField<T, Float>
-                                        @Suppress("UNCHECKED_CAST")
-                                        val intField = field as? SettingField<T, Int>
-
-                                        val subtitle = when {
-                                            floatField != null -> floatField.get(value).roundToOneDecimal()
-                                            intField != null -> intField.get(value).toString()
-                                            else -> ""
-                                        }
+                                        val sliderVal = field.toUiSliderValue(value)
+                                        val subtitle = sliderVal?.let {
+                                            if (meta.step < 1f) {
+                                                ((it * 10).toInt() / 10f).toString()
+                                            } else {
+                                                it.toInt().toString()
+                                            }
+                                        } ?: ""
 
                                         SettingsItem(
                                             title = title,
@@ -307,37 +301,27 @@ fun <T> AutoSettingsScreen(
     val cf = currentField
     if (showDropdown && cf?.meta != null) {
         val meta = cf.meta!!
-        @Suppress("UNCHECKED_CAST")
-        val intField = cf as? SettingField<T, Int>
-        if (intField != null) {
-            val options = meta.resolvedOptions(stringProvider)
-            DropdownSettingDialog(
-                title = meta.resolvedTitle(stringProvider),
-                options = options,
-                selectedIndex = intField.get(value),
-                onDismiss = { showDropdown = false },
-                onOptionSelected = { idx ->
-                    handleSetValue(cf, idx)
-                    showDropdown = false
+        val options = cf.getDropdownOptions() ?: meta.resolvedOptions(stringProvider)
+        val currentIdx = cf.toUiDropdownIndex(value) ?: 0
+
+        DropdownSettingDialog(
+            title = meta.resolvedTitle(stringProvider),
+            options = options,
+            selectedIndex = currentIdx,
+            onDismiss = { showDropdown = false },
+            onOptionSelected = { idx ->
+                val newValue = cf.fromUiDropdownIndex(idx)
+                if (newValue != null) {
+                    handleSetValue(cf, newValue)
                 }
-            )
-        } else {
-            showDropdown = false
-        }
+                showDropdown = false
+            }
+        )
     }
 
     if (showSlider && cf?.meta != null) {
         val meta = cf.meta!!
-        @Suppress("UNCHECKED_CAST")
-        val floatField = cf as? SettingField<T, Float>
-        @Suppress("UNCHECKED_CAST")
-        val intField = cf as? SettingField<T, Int>
-
-        val currentVal = when {
-            floatField != null -> floatField.get(value)
-            intField != null -> intField.get(value).toFloat()
-            else -> 0f
-        }
+        val currentVal = cf.toUiSliderValue(value) ?: 0f
 
         SliderSettingDialog(
             title = meta.resolvedTitle(stringProvider),
@@ -347,9 +331,9 @@ fun <T> AutoSettingsScreen(
             step = meta.step,
             onDismiss = { showSlider = false },
             onValueSelected = { v ->
-                when {
-                    floatField != null -> handleSetValue(cf, v)
-                    intField != null -> handleSetValue(cf, v.toInt())
+                val newValue = cf.fromUiSliderValue(v)
+                if (newValue != null) {
+                    handleSetValue(cf, newValue)
                 }
                 showSlider = false
             }
@@ -409,7 +393,3 @@ private data class PendingConfirmation<T>(
     val value: Any,
     val config: ConfirmationConfig,
 )
-
-fun Float.roundToOneDecimal(): String {
-    return ((this * 10.0).roundToInt() / 10.0).toString()
-}

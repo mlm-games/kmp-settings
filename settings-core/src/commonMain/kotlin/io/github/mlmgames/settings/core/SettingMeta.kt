@@ -8,6 +8,20 @@ import io.github.mlmgames.settings.core.types.SettingTypes
 import kotlin.reflect.KClass
 
 /**
+ * Kind of backing value for UI types.
+ */
+enum class ValueKind {
+    NONE,
+    BOOLEAN,
+    INT,
+    LONG,
+    FLOAT,
+    DOUBLE,
+    STRING,
+    ENUM,
+}
+
+/**
  * Runtime metadata for a setting field.
  */
 data class SettingMeta(
@@ -21,6 +35,10 @@ data class SettingMeta(
     val category: KClass<*>,
     val categoryOrder: Int,
     val type: KClass<*>,
+
+    // Value kind (backing type for UI)
+    val valueKind: ValueKind = ValueKind.NONE,
+    val enumTypeName: String? = null,
 
     // Persistence
     val key: String,
