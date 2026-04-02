@@ -57,6 +57,7 @@ fun SettingsItem(
     description: String? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
+    trailingContent: @Composable (() -> Unit)? = null,
 ) {
     Surface(
         onClick = onClick,
@@ -108,6 +109,8 @@ fun SettingsItem(
                     )
                 }
             }
+
+            trailingContent?.invoke()
         }
     }
 }
@@ -171,11 +174,13 @@ fun SettingsToggle(
 fun SettingsAction(
     title: String,
     description: String? = null,
-    buttonText: String = "Run",
     enabled: Boolean = true,
     onClick: () -> Unit,
+    trailingContent: @Composable (() -> Unit)? = null,
 ) {
     Surface(
+        onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
@@ -211,12 +216,7 @@ fun SettingsAction(
                 }
             }
 
-            Button(
-                onClick = onClick,
-                enabled = enabled,
-            ) {
-                Text(buttonText)
-            }
+            trailingContent?.invoke()
         }
     }
 }

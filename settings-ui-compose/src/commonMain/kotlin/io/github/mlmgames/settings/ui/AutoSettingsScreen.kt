@@ -13,7 +13,12 @@ import io.github.mlmgames.settings.core.annotations.SettingAction
 import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.annotations.ValidationResult
 import io.github.mlmgames.settings.core.platform.currentPlatform
-import io.github.mlmgames.settings.core.types.*
+import io.github.mlmgames.settings.core.types.Button
+import io.github.mlmgames.settings.core.types.Dropdown
+import io.github.mlmgames.settings.core.types.Slider
+import io.github.mlmgames.settings.core.types.TextInput
+import io.github.mlmgames.settings.core.types.TimePickerType
+import io.github.mlmgames.settings.core.types.Toggle
 import io.github.mlmgames.settings.ui.components.*
 import io.github.mlmgames.settings.ui.dialogs.*
 import kotlinx.coroutines.launch
@@ -54,6 +59,7 @@ data class CategoryConfig(
  * @param categoryConfigs Custom category display configuration
  * @param customTypeHandlers Custom type renderers
  * @param snackbarHostState External snackbar host state
+ * @param actionIcons Map of action classes to their icons
  */
 @Composable
 fun <T> AutoSettingsScreen(
@@ -66,6 +72,7 @@ fun <T> AutoSettingsScreen(
     categoryConfigs: List<CategoryConfig> = emptyList(),
     customTypeHandlers: List<CustomTypeHandler<T>> = emptyList(),
     snackbarHostState: SnackbarHostState? = null,
+    actionTrailingContent: Map<KClass<out SettingAction>, @Composable () -> Unit> = emptyMap(),
 ) {
     val stringProvider = LocalStringResourceProvider.current
     val scope = rememberCoroutineScope()
@@ -263,7 +270,8 @@ fun <T> AutoSettingsScreen(
                                             title = title,
                                             description = description,
                                             enabled = enabled,
-                                            onClick = { handleAction(field) }
+                                            onClick = { handleAction(field) },
+                                            trailingContent = meta.actionClass?.let { actionTrailingContent[it] },
                                         )
                                     }
 
