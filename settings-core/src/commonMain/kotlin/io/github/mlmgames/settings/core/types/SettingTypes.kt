@@ -24,6 +24,9 @@ object Button : SettingTypeMarker
 /** Text input field */
 object TextInput : SettingTypeMarker
 
+/** Time picker (stores minutes from midnight as Int) */
+object TimePickerType : SettingTypeMarker
+
 object SettingTypes {
     private val builtInTypes: Set<KClass<*>> = setOf(
         Toggle::class,
@@ -31,6 +34,7 @@ object SettingTypes {
         Slider::class,
         Button::class,
         TextInput::class,
+        TimePickerType::class,
     )
 
     fun isBuiltIn(type: KClass<*>): Boolean = type in builtInTypes

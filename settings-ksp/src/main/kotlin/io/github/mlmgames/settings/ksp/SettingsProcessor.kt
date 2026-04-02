@@ -221,6 +221,14 @@ class SettingsProcessor(
         val typeClass = typeType?.toClassName()
             ?: ClassName("io.github.mlmgames.settings.core.types", "Toggle")
 
+        // Validate TimePickerType is only used with Int
+        if (typeClass.simpleName == "TimePickerType") {
+            val propTypeName = propType.makeNotNullable().declaration.qualifiedName?.asString()
+            if (propTypeName != "kotlin.Int") {
+                logger.error("TimePickerType settings must use Int (minutes from midnight): $propName", prop)
+            }
+        }
+
         val keyName = keyOverride.ifBlank { toSnakeCase(propName) }
 
         // Determine value kind based on property type

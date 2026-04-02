@@ -86,6 +86,7 @@ fun <T> AutoSettingsScreen(
     var showDropdown by remember { mutableStateOf(false) }
     var showSlider by remember { mutableStateOf(false) }
     var showTextInput by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
     var currentField by remember { mutableStateOf<SettingField<T, *>?>(null) }
 
     // Confirmation dialog state
@@ -279,6 +280,21 @@ fun <T> AutoSettingsScreen(
                                             )
                                         }
                                     }
+
+                                    TimePickerType::class -> {
+                                        @Suppress("UNCHECKED_CAST")
+                                        val intField = field as? SettingField<T, Int>
+                                        if (intField != null) {
+                                            val minutes = intField.get(value)
+                                            SettingsItem(
+                                                title = title,
+                                                subtitle = formatMinutesOfDay(minutes),
+                                                description = description,
+                                                enabled = enabled,
+                                                onClick = { currentField = field; showTimePicker = true }
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -365,6 +381,25 @@ fun <T> AutoSettingsScreen(
         }
     }
 
+    if (showTimePicker && cf?.meta != null) {
+        val meta = cf.meta!!
+        @Suppress("UNCHECKED_CAST")
+        val intField = cf as? SettingField<T, Int>
+        if (intField != null) {
+            TimePickerSettingDialog(
+                title = meta.resolvedTitle(stringProvider),
+                currentMinutes = intField.get(value),
+                onDismiss = { showTimePicker = false },
+                onTimeSelected = { minutes ->
+                    handleSetValue(cf, minutes)
+                    showTimePicker = false
+                }
+            )
+        } else {
+            showTimePicker = false
+        }
+    }
+
     // Confirmation dialog
     pendingConfirmation?.let { pending ->
         SettingConfirmationDialog(
@@ -393,3 +428,20 @@ private data class PendingConfirmation<T>(
     val value: Any,
     val config: ConfirmationConfig,
 )
+
+private fun formatMinutesOfDay(totalMinutes: Int, use24Hour: Boolean = true): String {
+    val clamped = totalMinutes.coerceIn(0, 1439)
+    val hour = clamped / 60
+    val minute = clamped % 60
+
+    return if (use24Hour) {
+        "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
+    } else {
+        val suffix = if (hour < 12) "AM" else "PM"
+        val hour12 = when (val h = hour % 12) {
+            0 -> 12
+            else -> h
+        }
+        "$hour12:${minute.toString().padStart(2, '0')} $suffix"
+    }
+}
