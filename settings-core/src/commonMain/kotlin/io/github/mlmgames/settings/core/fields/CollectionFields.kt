@@ -33,6 +33,9 @@ class StringListField<T>(
     override fun write(prefs: MutablePreferences, value: List<String>) {
         prefs[key] = json.encodeToString(serializer, value)
     }
+
+    override fun encodeValue(value: List<String>): String = "j:" + json.encodeToString(serializer, value)
+    override fun decodeValue(encoded: String): List<String> = json.decodeFromString(serializer, encoded.substringAfter(':'))
 }
 
 class IntListField<T>(
@@ -57,6 +60,9 @@ class IntListField<T>(
     override fun write(prefs: MutablePreferences, value: List<Int>) {
         prefs[key] = json.encodeToString(serializer, value)
     }
+
+    override fun encodeValue(value: List<Int>): String = "j:" + json.encodeToString(serializer, value)
+    override fun decodeValue(encoded: String): List<Int> = json.decodeFromString(serializer, encoded.substringAfter(':'))
 }
 
 class LongListField<T>(
@@ -81,6 +87,9 @@ class LongListField<T>(
     override fun write(prefs: MutablePreferences, value: List<Long>) {
         prefs[key] = json.encodeToString(serializer, value)
     }
+
+    override fun encodeValue(value: List<Long>): String = "j:" + json.encodeToString(serializer, value)
+    override fun decodeValue(encoded: String): List<Long> = json.decodeFromString(serializer, encoded.substringAfter(':'))
 }
 
 /**
@@ -116,6 +125,9 @@ abstract class BaseMapField<T, K, V>(
             // Ignore serialization errors
         }
     }
+
+    override fun encodeValue(value: Map<K, V>): String = "j:" + json.encodeToString(serializer, value)
+    override fun decodeValue(encoded: String): Map<K, V> = json.decodeFromString(serializer, encoded.substringAfter(':'))
 }
 
 class StringMapField<T>(

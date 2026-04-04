@@ -687,7 +687,7 @@ class SettingsProcessor(
         metaBlock: CodeBlock?,
         isNullable: Boolean,
     ): CodeBlock {
-        val typeClassName = propType.makeNotNullable().toClassName()
+        val typeClassName = propType.makeNotNullable().toTypeName()
         val fieldClass = if (isNullable) nullableSerializedField else serializedField
 
         val builder = CodeBlock.builder()
@@ -707,13 +707,41 @@ class SettingsProcessor(
             .add("serializer = %M(),\n", MemberName("kotlinx.serialization", "serializer"))
 
         if (!isNullable) {
-            builder.add("defaultValue = %T(),\n", typeClassName)
+            val defaultValue = buildDefaultValue(propType.makeNotNullable())
+            builder.add("defaultValue = %L,\n", defaultValue)
         }
 
         return builder
             .unindent()
             .add(")")
             .build()
+    }
+
+    /**
+     * Convert a KSType to a TypeName, preserving type arguments.
+     */
+    private fun KSType.toTypeName(): TypeName {
+        val decl = declaration
+        val className = ClassName(decl.packageName.asString(), decl.simpleName.asString())
+        val typeArgs = arguments.mapNotNull { it.type?.resolve()?.toTypeName() }
+        return if (typeArgs.isNotEmpty()) {
+            className.parameterizedBy(typeArgs)
+        } else {
+            className
+        }
+    }
+
+    /**
+     * Generate a default value expression for a KSType.
+     */
+    private fun buildDefaultValue(type: KSType): CodeBlock {
+        val qname = type.declaration.qualifiedName?.asString()
+        return when (qname) {
+            "kotlin.collections.List" -> CodeBlock.of("emptyList()")
+            "kotlin.collections.Set" -> CodeBlock.of("emptySet()")
+            "kotlin.collections.Map" -> CodeBlock.of("emptyMap()")
+            else -> CodeBlock.of("%T()", type.toTypeName())
+        }
     }
 
     private fun getCategoryOrder(categoryType: KSType?): Int {

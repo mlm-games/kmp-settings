@@ -42,4 +42,10 @@ interface SettingField<T, V> {
 
     /** Get dropdown options. Returns null if not applicable. */
     fun getDropdownOptions(): List<String>? = null
+
+    /** Encode a typed value to a type-prefixed string for backup export. */
+    fun encodeValue(value: V): String? = null
+
+    /** Decode a type-prefixed string back to a typed value for backup import. */
+    fun decodeValue(encoded: String): V? = null
 }

@@ -41,6 +41,12 @@ class EnumField<T, E : Enum<E>>(
     override fun getDropdownOptions(): List<String> {
         return enumValues.map { it.name }
     }
+
+    override fun encodeValue(value: E): String = "s:${value.name}"
+    override fun decodeValue(encoded: String): E {
+        val name = encoded.substringAfter(':')
+        return enumValues.firstOrNull { it.name == name } ?: defaultValue
+    }
 }
 
 class NullableEnumField<T, E : Enum<E>>(
@@ -75,6 +81,17 @@ class NullableEnumField<T, E : Enum<E>>(
     override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index)
 
     override fun getDropdownOptions(): List<String> = enumValues.map { it.name }
+
+    override fun encodeValue(value: E?): String {
+        if (value == null) return "s:"
+        return "s:${value.name}"
+    }
+
+    override fun decodeValue(encoded: String): E? {
+        val name = encoded.substringAfter(':')
+        if (name.isEmpty()) return null
+        return enumValues.firstOrNull { it.name == name }
+    }
 }
 
 class EnumOrdinalField<T, E : Enum<E>>(
@@ -105,4 +122,10 @@ class EnumOrdinalField<T, E : Enum<E>>(
     override fun fromUiDropdownIndex(index: Int): E = enumValues.getOrNull(index) ?: defaultValue
 
     override fun getDropdownOptions(): List<String> = enumValues.map { it.name }
+
+    override fun encodeValue(value: E): String = "i:${value.ordinal}"
+    override fun decodeValue(encoded: String): E {
+        val ordinal = encoded.substringAfter(':').toInt()
+        return enumValues.getOrNull(ordinal) ?: defaultValue
+    }
 }

@@ -49,6 +49,12 @@ class SerializedField<T, V>(
             // Ignore serialization errors
         }
     }
+
+    override fun encodeValue(value: V): String = "j:" + json.encodeToString(serializer, value)
+
+    override fun decodeValue(encoded: String): V {
+        return json.decodeFromString(serializer, encoded.substringAfter(':'))
+    }
 }
 
 class NullableSerializedField<T, V : Any>(
@@ -90,5 +96,16 @@ class NullableSerializedField<T, V : Any>(
                 // Ignore
             }
         }
+    }
+
+    override fun encodeValue(value: V?): String {
+        if (value == null) return "n:"
+        return "j:" + json.encodeToString(serializer, value)
+    }
+
+    override fun decodeValue(encoded: String): V? {
+        val data = encoded.substringAfter(':')
+        if (data.isEmpty()) return null
+        return json.decodeFromString(serializer, data)
     }
 }

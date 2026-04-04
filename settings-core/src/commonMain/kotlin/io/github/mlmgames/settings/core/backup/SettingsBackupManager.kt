@@ -3,7 +3,9 @@
 package io.github.mlmgames.settings.core.backup
 
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import io.github.mlmgames.settings.core.SettingField
 import io.github.mlmgames.settings.core.SettingsSchema
 import kotlinx.coroutines.flow.first
 import kotlin.time.Clock
@@ -25,19 +27,19 @@ class SettingsBackupManager<T>(
 
     /**
      * Export all settings from DataStore.
-     * Reads raw preferences to avoid serialization issues with complex types.
+     * Iterates schema fields and delegates encoding to each field.
      */
     suspend fun export(): ExportResult {
         return try {
             val prefs = dataStore.data.first()
             val settingsMap = mutableMapOf<String, String>()
 
-            // Export all preferences from DataStore directly
-            prefs.asMap().forEach { (key, value) ->
-                val encoded = encodePreferenceValue(value)
-                if (encoded != null) {
-                    settingsMap[key.name] = encoded
-                }
+            for (field in schema.fields) {
+                @Suppress("UNCHECKED_CAST")
+                val typedField = field as SettingField<T, Any?>
+                val value = typedField.read(prefs) ?: continue
+                val encoded = typedField.encodeValue(value) ?: continue
+                settingsMap[field.keyName] = encoded
             }
 
             val bundle = SettingsBundle(
@@ -84,11 +86,20 @@ class SettingsBackupManager<T>(
             dataStore.edit { prefs ->
                 for ((keyName, encodedValue) in bundle.settings) {
                     try {
-                        val success = writePreferenceValue(prefs, keyName, encodedValue)
-                        if (success) {
-                            applied.add(keyName)
+                        val field = schema.fieldByKey(keyName)
+                        if (field != null) {
+                            @Suppress("UNCHECKED_CAST")
+                            val decoded = (field as SettingField<T, Any?>).decodeValue(encodedValue)
+                            if (decoded != null) {
+                                field.write(prefs, decoded)
+                                applied.add(keyName)
+                            } else {
+                                skipped.add(keyName)
+                            }
                         } else {
-                            skipped.add(keyName)
+                            // Unknown key: write as raw string to preserve forward compatibility
+                            prefs[androidx.datastore.preferences.core.stringPreferencesKey(keyName)] = encodedValue
+                            applied.add(keyName)
                         }
                     } catch (e: Exception) {
                         errors.add(keyName to (e.message ?: "Unknown error"))
@@ -155,16 +166,11 @@ class SettingsBackupManager<T>(
 
             for (fieldName in fieldNames) {
                 val field = schema.fieldByName(fieldName) ?: continue
-                val keyName = field.keyName
-
-                // Find the preference value by trying different key types
-                val value = findPreferenceValue(prefs, keyName)
-                if (value != null) {
-                    val encoded = encodePreferenceValue(value)
-                    if (encoded != null) {
-                        settingsMap[keyName] = encoded
-                    }
-                }
+                @Suppress("UNCHECKED_CAST")
+                val typedField = field as SettingField<T, Any?>
+                val value = typedField.read(prefs) ?: continue
+                val encoded = typedField.encodeValue(value) ?: continue
+                settingsMap[field.keyName] = encoded
             }
 
             val bundle = SettingsBundle(
@@ -180,88 +186,6 @@ class SettingsBackupManager<T>(
         } catch (e: Exception) {
             ExportResult.Error(e.message ?: "Export failed")
         }
-    }
-
-    /**
-     * Encode a preference value to a type-prefixed string.
-     */
-    private fun encodePreferenceValue(value: Any?): String? {
-        return when (value) {
-            is Boolean -> "b:$value"
-            is Int -> "i:$value"
-            is Long -> "l:$value"
-            is Float -> "f:$value"
-            is Double -> "d:$value"
-            is String -> "s:$value"
-            is Set<*> -> {
-                // Encode string set as JSON array
-                @Suppress("UNCHECKED_CAST")
-                val stringSet = value as? Set<String> ?: return null
-                "ss:" + json.encodeToString(stringSet.toList())
-            }
-            null -> null
-            else -> null // Unknown types are skipped
-        }
-    }
-
-    /**
-     * Write an encoded value back to preferences.
-     */
-    private fun writePreferenceValue(prefs: MutablePreferences, keyName: String, encoded: String): Boolean {
-        if (encoded.length < 2 || !encoded.contains(':')) {
-            return false
-        }
-
-        val prefix = encoded.substringBefore(':')
-        val data = encoded.substringAfter(':')
-
-        return when (prefix) {
-            "b" -> {
-                prefs[booleanPreferencesKey(keyName)] = data.toBooleanStrict()
-                true
-            }
-            "i" -> {
-                prefs[intPreferencesKey(keyName)] = data.toInt()
-                true
-            }
-            "l" -> {
-                prefs[longPreferencesKey(keyName)] = data.toLong()
-                true
-            }
-            "f" -> {
-                prefs[floatPreferencesKey(keyName)] = data.toFloat()
-                true
-            }
-            "d" -> {
-                prefs[doublePreferencesKey(keyName)] = data.toDouble()
-                true
-            }
-            "s" -> {
-                prefs[stringPreferencesKey(keyName)] = data
-                true
-            }
-            "ss" -> {
-                val list = json.decodeFromString<List<String>>(data)
-                prefs[stringSetPreferencesKey(keyName)] = list.toSet()
-                true
-            }
-            else -> false
-        }
-    }
-
-    /**
-     * Find a preference value by key name, trying all possible key types.
-     */
-    private fun findPreferenceValue(prefs: Preferences, keyName: String): Any? {
-        // Try each preference type
-        prefs[booleanPreferencesKey(keyName)]?.let { return it }
-        prefs[intPreferencesKey(keyName)]?.let { return it }
-        prefs[longPreferencesKey(keyName)]?.let { return it }
-        prefs[floatPreferencesKey(keyName)]?.let { return it }
-        prefs[doublePreferencesKey(keyName)]?.let { return it }
-        prefs[stringPreferencesKey(keyName)]?.let { return it }
-        prefs[stringSetPreferencesKey(keyName)]?.let { return it }
-        return null
     }
 
     private fun calculateChecksum(settings: Map<String, String>): String =

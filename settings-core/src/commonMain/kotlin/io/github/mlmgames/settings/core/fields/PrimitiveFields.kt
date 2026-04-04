@@ -16,6 +16,8 @@ class BooleanField<T>(
     override fun set(model: T, value: Boolean) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Boolean) { prefs[key] = value }
+    override fun encodeValue(value: Boolean): String = "b:$value"
+    override fun decodeValue(encoded: String): Boolean = encoded.substringAfter(':').toBooleanStrict()
 }
 
 class IntField<T>(
@@ -33,6 +35,8 @@ class IntField<T>(
 
     override fun toUiSliderValue(model: T): Float = getter(model).toFloat()
     override fun fromUiSliderValue(value: Float): Int = value.toInt()
+    override fun encodeValue(value: Int): String = "i:$value"
+    override fun decodeValue(encoded: String): Int = encoded.substringAfter(':').toInt()
 }
 
 class LongField<T>(
@@ -47,6 +51,8 @@ class LongField<T>(
     override fun set(model: T, value: Long) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Long) { prefs[key] = value }
+    override fun encodeValue(value: Long): String = "l:$value"
+    override fun decodeValue(encoded: String): Long = encoded.substringAfter(':').toLong()
 }
 
 class FloatField<T>(
@@ -64,6 +70,8 @@ class FloatField<T>(
 
     override fun toUiSliderValue(model: T): Float = getter(model)
     override fun fromUiSliderValue(value: Float): Float = value
+    override fun encodeValue(value: Float): String = "f:$value"
+    override fun decodeValue(encoded: String): Float = encoded.substringAfter(':').toFloat()
 }
 
 class DoubleField<T>(
@@ -78,6 +86,8 @@ class DoubleField<T>(
     override fun set(model: T, value: Double) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Double) { prefs[key] = value }
+    override fun encodeValue(value: Double): String = "d:$value"
+    override fun decodeValue(encoded: String): Double = encoded.substringAfter(':').toDouble()
 }
 
 class StringField<T>(
@@ -92,4 +102,6 @@ class StringField<T>(
     override fun set(model: T, value: String) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: String) { prefs[key] = value }
+    override fun encodeValue(value: String): String = "s:$value"
+    override fun decodeValue(encoded: String): String = encoded.substringAfter(':')
 }

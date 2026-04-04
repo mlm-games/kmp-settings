@@ -29,6 +29,21 @@ class NullableBooleanField<T>(
             null -> prefs.remove(key)
         }
     }
+
+    override fun encodeValue(value: Boolean?): String = when (value) {
+        true -> "b:true"
+        false -> "b:false"
+        null -> "b:"
+    }
+
+    override fun decodeValue(encoded: String): Boolean? {
+        val v = encoded.substringAfter(':')
+        return when (v) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+    }
 }
 
 class NullableIntField<T>(
@@ -56,6 +71,16 @@ class NullableIntField<T>(
         prefs[key] = value?.toLong() ?: NULL_SENTINEL
     }
 
+    override fun encodeValue(value: Int?): String {
+        val v = value ?: NULL_SENTINEL
+        return "i:$v"
+    }
+
+    override fun decodeValue(encoded: String): Int? {
+        val v = encoded.substringAfter(':').toLongOrNull() ?: return null
+        return if (v == NULL_SENTINEL) null else v.toInt()
+    }
+
     override fun toUiSliderValue(model: T): Float? = getter(model)?.toFloat()
     override fun fromUiSliderValue(value: Float): Int? = value.toInt()
 }
@@ -75,6 +100,17 @@ class NullableLongField<T>(
 
     override fun write(prefs: MutablePreferences, value: Long?) {
         if (value == null) prefs.remove(key) else prefs[key] = value.toString()
+    }
+
+    override fun encodeValue(value: Long?): String {
+        if (value == null) return "l:"
+        return "l:$value"
+    }
+
+    override fun decodeValue(encoded: String): Long? {
+        val v = encoded.substringAfter(':')
+        if (v.isEmpty()) return null
+        return v.toLongOrNull()
     }
 }
 
@@ -101,6 +137,17 @@ class NullableFloatField<T>(
 
     override fun toUiSliderValue(model: T): Float? = getter(model)
     override fun fromUiSliderValue(value: Float): Float? = value
+
+    override fun encodeValue(value: Float?): String {
+        if (value == null) return "f:"
+        return "f:$value"
+    }
+
+    override fun decodeValue(encoded: String): Float? {
+        val v = encoded.substringAfter(':')
+        if (v.isEmpty()) return null
+        return v.toFloatOrNull()
+    }
 }
 
 class NullableDoubleField<T>(
@@ -122,6 +169,17 @@ class NullableDoubleField<T>(
 
     override fun write(prefs: MutablePreferences, value: Double?) {
         prefs[key] = value ?: Double.NaN
+    }
+
+    override fun encodeValue(value: Double?): String {
+        if (value == null) return "d:"
+        return "d:$value"
+    }
+
+    override fun decodeValue(encoded: String): Double? {
+        val v = encoded.substringAfter(':')
+        if (v.isEmpty()) return null
+        return v.toDoubleOrNull()
     }
 }
 
@@ -148,5 +206,15 @@ class NullableStringField<T>(
 
     override fun write(prefs: MutablePreferences, value: String?) {
         prefs[key] = value ?: NULL_SENTINEL
+    }
+
+    override fun encodeValue(value: String?): String {
+        val v = value ?: NULL_SENTINEL
+        return "s:$v"
+    }
+
+    override fun decodeValue(encoded: String): String? {
+        val v = encoded.substringAfter(':')
+        return if (v == NULL_SENTINEL) null else v
     }
 }
