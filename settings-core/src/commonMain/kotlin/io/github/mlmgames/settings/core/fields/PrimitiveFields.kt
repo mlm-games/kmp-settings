@@ -35,6 +35,8 @@ class IntField<T>(
 
     override fun toUiSliderValue(model: T): Float = getter(model).toFloat()
     override fun fromUiSliderValue(value: Float): Int = value.toInt()
+    override fun toUiDropdownIndex(model: T): Int = getter(model)
+    override fun fromUiDropdownIndex(index: Int): Int = index
     override fun encodeValue(value: Int): String = "i:$value"
     override fun decodeValue(encoded: String): Int = encoded.substringAfter(':').toInt()
 }
