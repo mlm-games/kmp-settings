@@ -1,18 +1,20 @@
 [versions]
-agp = "9.1.0"
-datastorePreferences = "1.3.0-alpha07"
-kotlin = "2.3.20"
+agp = "9.2.1"
+datastorePreferences = "1.3.0-alpha09"
+kotlin = "2.3.21"
 android-minSdk = "21"
-android-compileSdk = "36"
+android-compileSdk = "37"
 kotlinpoet = "2.3.0"
-kotlinxCoroutinesCore = "1.10.2"
-kotlinxSerializationJson = "1.10.0"
-kotlinxDatetime = "0.7.1"
+kotlinxCoroutinesCore = "1.11.0"
+kotlinxSerializationJson = "1.11.0"
+kotlinxDatetime = "0.8.0"
+kotlinxBrowser = "0.5.0"
 okio = "3.17.0"
 symbolProcessingApi = "2.3.6"
 vanniktechMavenPublish = "0.36.0"
 ksp = "2.3.6"
-compose = "1.11.0-alpha04"
+compose = "1.11.0-rc01"
+composeMaterial = "1.11.0-alpha07"
 dokka = "2.2.0"
 
 [libraries]
@@ -25,10 +27,11 @@ kotlinpoet-ksp = { module = "com.squareup:kotlinpoet-ksp", version.ref = "kotlin
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutinesCore" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
+kotlinx-browser = { module = "org.jetbrains.kotlinx:kotlinx-browser", version.ref = "kotlinxBrowser" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 symbol-processing-api = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = "symbolProcessingApi" }
 
-compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "composeMaterial" }
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose" }

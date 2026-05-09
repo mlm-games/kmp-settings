@@ -11,7 +11,7 @@ plugins {
 kotlin {
     android {
         namespace = "io.github.mlmgames.settings.core"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 21
         withJava()
 
@@ -44,6 +44,11 @@ kotlin {
         androidMain {
             dependencies {
                 implementation(libs.datastore.preferences)
+            }
+        }
+        wasmJsMain {
+            dependencies {
+                implementation(libs.kotlinx.browser)
             }
         }
         commonTest {
