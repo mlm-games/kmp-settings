@@ -28,4 +28,8 @@ class UnitField<T>(
     override fun write(prefs: MutablePreferences, value: Unit) {
         // Intentionally no-op: Unit-backed button settings are not persisted.
     }
+
+    override fun hasValue(prefs: Preferences): Boolean = false
+    override val isResettable: Boolean
+        get() = false
 }

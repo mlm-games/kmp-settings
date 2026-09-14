@@ -14,16 +14,25 @@ class EnumField<T, E : Enum<E>>(
     private val getter: (T) -> E,
     private val setter: (T, E) -> T,
     private val enumValues: Array<E>,
-    private val defaultValue: E,
+    @Suppress("unused") private val defaultValue: E? = null,
 ) : SettingField<T, E> {
-    private val key = stringPreferencesKey(keyName)
+    internal val key = stringPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): E = getter(model)
     override fun set(model: T, value: E): T = setter(model, value)
 
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
+
+    /**
+     * Unknown persisted names (renamed/removed enum entries) decode to null so
+     * callers fall back to the schema default explicitly instead of silently
+     * substituting the default inside the field. Never count them as applied.
+     */
     override fun read(prefs: Preferences): E? {
         val name = prefs[key] ?: return null
-        return enumValues.firstOrNull { it.name == name } ?: defaultValue
+        return enumValues.firstOrNull { it.name == name }
     }
 
     override fun write(prefs: MutablePreferences, value: E) {
@@ -34,8 +43,12 @@ class EnumField<T, E : Enum<E>>(
         return getter(model).ordinal
     }
 
-    override fun fromUiDropdownIndex(index: Int): E {
-        return enumValues.getOrNull(index) ?: defaultValue
+    /**
+     * Out-of-range indices are rejected (null) so the UI can surface an error
+     * instead of silently resetting to the default.
+     */
+    override fun fromUiDropdownIndex(index: Int): E? {
+        return enumValues.getOrNull(index)
     }
 
     override fun getDropdownOptions(): List<String> {
@@ -43,9 +56,9 @@ class EnumField<T, E : Enum<E>>(
     }
 
     override fun encodeValue(value: E): String = "s:${value.name}"
-    override fun decodeValue(encoded: String): E {
+    override fun decodeValue(encoded: String): E? {
         val name = encoded.substringAfter(':')
-        return enumValues.firstOrNull { it.name == name } ?: defaultValue
+        return enumValues.firstOrNull { it.name == name }
     }
 }
 
@@ -61,10 +74,16 @@ class NullableEnumField<T, E : Enum<E>>(
         private const val NULL_MARKER = "__NULL__"
     }
 
-    private val key = stringPreferencesKey(keyName)
+    internal val key = stringPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): E? = getter(model)
     override fun set(model: T, value: E?): T = setter(model, value)
+
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        prefs[key] == NULL_MARKER
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun read(prefs: Preferences): E? {
         val name = prefs[key] ?: return null
@@ -101,16 +120,19 @@ class EnumOrdinalField<T, E : Enum<E>>(
     private val getter: (T) -> E,
     private val setter: (T, E) -> T,
     private val enumValues: Array<E>,
-    private val defaultValue: E,
 ) : SettingField<T, E> {
-    private val key = intPreferencesKey(keyName)
+    internal val key = intPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): E = getter(model)
     override fun set(model: T, value: E): T = setter(model, value)
 
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
+
     override fun read(prefs: Preferences): E? {
         val ordinal = prefs[key] ?: return null
-        return enumValues.getOrNull(ordinal) ?: defaultValue
+        return enumValues.getOrNull(ordinal)
     }
 
     override fun write(prefs: MutablePreferences, value: E) {
@@ -119,13 +141,13 @@ class EnumOrdinalField<T, E : Enum<E>>(
 
     override fun toUiDropdownIndex(model: T): Int = getter(model).ordinal
 
-    override fun fromUiDropdownIndex(index: Int): E = enumValues.getOrNull(index) ?: defaultValue
+    override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index)
 
     override fun getDropdownOptions(): List<String> = enumValues.map { it.name }
 
     override fun encodeValue(value: E): String = "i:${value.ordinal}"
-    override fun decodeValue(encoded: String): E {
-        val ordinal = encoded.substringAfter(':').toInt()
-        return enumValues.getOrNull(ordinal) ?: defaultValue
+    override fun decodeValue(encoded: String): E? {
+        val ordinal = encoded.substringAfter(':').toIntOrNull() ?: return null
+        return enumValues.getOrNull(ordinal)
     }
 }

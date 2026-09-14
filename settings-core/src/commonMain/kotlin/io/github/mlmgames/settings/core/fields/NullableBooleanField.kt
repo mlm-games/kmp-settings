@@ -11,14 +11,26 @@ class NullableBooleanField<T>(
     private val getter: (T) -> Boolean?,
     private val setter: (T, Boolean?) -> T,
 ) : SettingField<T, Boolean?> {
-    private val key = stringPreferencesKey("${keyName}_nullable")
+    companion object {
+        internal const val NULL_MARKER = "__NULL__"
+    }
+
+    internal val key = stringPreferencesKey("${keyName}_nullable")
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): Boolean? = getter(model)
     override fun set(model: T, value: Boolean?): T = setter(model, value)
 
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        prefs[key] == NULL_MARKER
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
+
     override fun read(prefs: Preferences): Boolean? = when (prefs[key]) {
         "true" -> true
         "false" -> false
+        // Explicit-null marker, absent key, or corrupt value all decode to null.
+        // Use hasValue()/isExplicitNull() to distinguish.
         else -> null
     }
 
@@ -26,7 +38,9 @@ class NullableBooleanField<T>(
         when (value) {
             true -> prefs[key] = "true"
             false -> prefs[key] = "false"
-            null -> prefs.remove(key)
+            // Explicit marker (not key removal) so explicit null survives
+            // export/import, snapshots, and undo. Absent key = never set.
+            null -> prefs[key] = NULL_MARKER
         }
     }
 
@@ -41,7 +55,8 @@ class NullableBooleanField<T>(
         return when (v) {
             "true" -> true
             "false" -> false
-            else -> null
+            "" -> null
+            else -> throw IllegalArgumentException("Invalid nullable boolean value: $encoded")
         }
     }
 }
@@ -57,10 +72,16 @@ class NullableIntField<T>(
         private const val NULL_SENTINEL = Long.MIN_VALUE
     }
 
-    private val key = longPreferencesKey("${keyName}_nullable")
+    internal val key = longPreferencesKey("${keyName}_nullable")
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): Int? = getter(model)
     override fun set(model: T, value: Int?): T = setter(model, value)
+
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        prefs[key] == NULL_SENTINEL
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun read(prefs: Preferences): Int? {
         val stored = prefs[key] ?: return null
@@ -77,8 +98,13 @@ class NullableIntField<T>(
     }
 
     override fun decodeValue(encoded: String): Int? {
-        val v = encoded.substringAfter(':').toLongOrNull() ?: return null
-        return if (v == NULL_SENTINEL) null else v.toInt()
+        val v = encoded.substringAfter(':').toLongOrNull()
+            ?: throw IllegalArgumentException("Invalid nullable int value: $encoded")
+        if (v == NULL_SENTINEL) return null
+        if (v < Int.MIN_VALUE || v > Int.MAX_VALUE) {
+            throw IllegalArgumentException("Int value out of range: $encoded")
+        }
+        return v.toInt()
     }
 
     override fun toUiSliderValue(model: T): Float? = getter(model)?.toFloat()
@@ -92,14 +118,31 @@ class NullableLongField<T>(
     private val getter: (T) -> Long?,
     private val setter: (T, Long?) -> T,
 ) : SettingField<T, Long?> {
-    private val key = stringPreferencesKey("${keyName}_nullable_long")
+    companion object {
+        internal const val NULL_MARKER = "__NULL__"
+    }
+
+    internal val key = stringPreferencesKey("${keyName}_nullable_long")
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): Long? = getter(model)
     override fun set(model: T, value: Long?): T = setter(model, value)
-    override fun read(prefs: Preferences): Long? = prefs[key]?.toLongOrNull()
+
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        prefs[key] == NULL_MARKER
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
+
+    override fun read(prefs: Preferences): Long? {
+        val stored = prefs[key] ?: return null
+        if (stored == NULL_MARKER) return null
+        // Corrupt (non-numeric) values decode to null; hasValue() stays true
+        // and isExplicitNull() false so callers can tell corruption from null.
+        return stored.toLongOrNull()
+    }
 
     override fun write(prefs: MutablePreferences, value: Long?) {
-        if (value == null) prefs.remove(key) else prefs[key] = value.toString()
+        prefs[key] = value?.toString() ?: NULL_MARKER
     }
 
     override fun encodeValue(value: Long?): String {
@@ -111,6 +154,7 @@ class NullableLongField<T>(
         val v = encoded.substringAfter(':')
         if (v.isEmpty()) return null
         return v.toLongOrNull()
+            ?: throw IllegalArgumentException("Invalid nullable long value: $encoded")
     }
 }
 
@@ -121,13 +165,21 @@ class NullableFloatField<T>(
     private val getter: (T) -> Float?,
     private val setter: (T, Float?) -> T,
 ) : SettingField<T, Float?> {
-    private val key = floatPreferencesKey("${keyName}_nullable")
+    internal val key = floatPreferencesKey("${keyName}_nullable")
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): Float? = getter(model)
     override fun set(model: T, value: Float?): T = setter(model, value)
 
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        (prefs[key]?.isNaN() == true)
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
+
     override fun read(prefs: Preferences): Float? {
         val stored = prefs[key] ?: return null
+        // NaN is the explicit-null marker. A genuine NaN setting value is
+        // indistinguishable from null and reads back as null (documented).
         return if (stored.isNaN()) null else stored
     }
 
@@ -147,6 +199,7 @@ class NullableFloatField<T>(
         val v = encoded.substringAfter(':')
         if (v.isEmpty()) return null
         return v.toFloatOrNull()
+            ?: throw IllegalArgumentException("Invalid nullable float value: $encoded")
     }
 }
 
@@ -157,13 +210,20 @@ class NullableDoubleField<T>(
     private val getter: (T) -> Double?,
     private val setter: (T, Double?) -> T,
 ) : SettingField<T, Double?> {
-    private val key = doublePreferencesKey("${keyName}_nullable")
+    internal val key = doublePreferencesKey("${keyName}_nullable")
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): Double? = getter(model)
     override fun set(model: T, value: Double?): T = setter(model, value)
 
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        (prefs[key]?.isNaN() == true)
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
+
     override fun read(prefs: Preferences): Double? {
         val stored = prefs[key] ?: return null
+        // NaN is the explicit-null marker (see NullableFloatField).
         return if (stored.isNaN()) null else stored
     }
 
@@ -180,6 +240,7 @@ class NullableDoubleField<T>(
         val v = encoded.substringAfter(':')
         if (v.isEmpty()) return null
         return v.toDoubleOrNull()
+            ?: throw IllegalArgumentException("Invalid nullable double value: $encoded")
     }
 }
 
@@ -191,16 +252,23 @@ class NullableStringField<T>(
     private val setter: (T, String?) -> T,
 ) : SettingField<T, String?> {
     companion object {
-        private const val NULL_SENTINEL = "\u0000__NULL__\u0000"
+        internal const val NULL_SENTINEL = "__NULL__"
     }
 
-    private val key = stringPreferencesKey("${keyName}_nullable")
+    internal val key = stringPreferencesKey("${keyName}_nullable")
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): String? = getter(model)
     override fun set(model: T, value: String?): T = setter(model, value)
 
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        prefs[key] == NULL_SENTINEL
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
+
     override fun read(prefs: Preferences): String? {
         val stored = prefs[key] ?: return null
+        // A genuine value equal to the sentinel reads back as null (documented).
         return if (stored == NULL_SENTINEL) null else stored
     }
 

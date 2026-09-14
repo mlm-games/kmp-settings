@@ -4,15 +4,29 @@ import io.github.mlmgames.settings.core.annotations.SettingAction
 import kotlin.reflect.KClass
 
 object ActionRegistry {
-    private val handlers = mutableMapOf<KClass<out SettingAction>, suspend () -> Unit>()
-    private val actionInstances = mutableMapOf<KClass<out SettingAction>, SettingAction>()
+    // No synchronized: KMP common code has no JVM monitors. Registration
+    // happens at startup on a single thread; reads copy the reference, so the
+    // worst case under races is a torn read resolved by re-registration.
+    // Mutations replace the map reference atomically (volatile-style via
+    // Kotlin's memory model for object properties on each platform).
+    @Suppress("OPT_IN_USAGE")
+    @kotlin.concurrent.Volatile
+    private var handlers: Map<KClass<out SettingAction>, suspend () -> Unit> = emptyMap()
+    @Suppress("OPT_IN_USAGE")
+    @kotlin.concurrent.Volatile
+    private var actionInstances: Map<KClass<out SettingAction>, SettingAction> = emptyMap()
 
     fun <T : SettingAction> register(actionClass: KClass<T>, handler: suspend () -> Unit) {
-        handlers[actionClass] = handler
+        handlers = handlers + (actionClass to handler)
     }
 
     inline fun <reified T : SettingAction> register(noinline handler: suspend () -> Unit) {
         register(T::class, handler)
+    }
+
+    fun unregister(actionClass: KClass<out SettingAction>) {
+        handlers = handlers - actionClass
+        actionInstances = actionInstances - actionClass
     }
 
     /**
@@ -20,7 +34,7 @@ object ActionRegistry {
      * Call this at app startup for each action object.
      */
     fun <T : SettingAction> registerAction(actionClass: KClass<T>, instance: T) {
-        actionInstances[actionClass] = instance
+        actionInstances = actionInstances + (actionClass to instance)
     }
 
     inline fun <reified T : SettingAction> registerAction(instance: T) {
@@ -38,8 +52,8 @@ object ActionRegistry {
     }
 
     fun clear() {
-        handlers.clear()
-        actionInstances.clear()
+        handlers = emptyMap()
+        actionInstances = emptyMap()
     }
 }
 

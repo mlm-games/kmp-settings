@@ -5,12 +5,14 @@ package io.github.mlmgames.settings.core.backup
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.mlmgames.settings.core.SettingField
 import io.github.mlmgames.settings.core.SettingsSchema
 import kotlinx.coroutines.flow.first
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okio.ByteString.Companion.encodeUtf8
 
 class SettingsBackupManager<T>(
     private val dataStore: DataStore<Preferences>,
@@ -28,21 +30,39 @@ class SettingsBackupManager<T>(
     /**
      * Export all settings from DataStore.
      * Iterates schema fields and delegates encoding to each field.
+     * Explicit nulls are exported (empty payload after the prefix); fields that
+     * fail to encode are recorded per-field and abort the export so a backup is
+     * never silently partial.
      */
     suspend fun export(): ExportResult {
         return try {
             val prefs = dataStore.data.first()
             val settingsMap = mutableMapOf<String, String>()
+            val failed = mutableListOf<String>()
 
             for (field in schema.fields) {
                 @Suppress("UNCHECKED_CAST")
                 val typedField = field as SettingField<T, Any?>
-                val value = typedField.read(prefs) ?: continue
-                val encoded = typedField.encodeValue(value) ?: continue
-                settingsMap[field.keyName] = encoded
+                if (!typedField.hasValue(prefs)) continue
+                val value = if (typedField.isExplicitNull(prefs)) null else typedField.read(prefs)
+                // Corrupt values (present, not explicit null, decode null) are
+                // skipped rather than failing the whole export; absence of the
+                // key in the backup means "leave current value" on import.
+                if (value == null && !typedField.isExplicitNull(prefs)) continue
+                try {
+                    val encoded = typedField.encodeValue(value) ?: continue
+                    settingsMap[field.keyName] = encoded
+                } catch (e: Exception) {
+                    failed.add(field.keyName)
+                }
+            }
+
+            if (failed.isNotEmpty()) {
+                return ExportResult.Error("Failed to encode: ${failed.joinToString()}")
             }
 
             val bundle = SettingsBundle(
+                formatVersion = SettingsBundle.CURRENT_FORMAT_VERSION,
                 schemaVersion = schemaVersion,
                 appId = appId,
                 exportedAt = Clock.System.now().toEpochMilliseconds(),
@@ -59,10 +79,22 @@ class SettingsBackupManager<T>(
 
     /**
      * Import settings from a JSON backup.
+     * mergeMode is honored: OVERWRITE writes everything known, KEEP_EXISTING
+     * skips keys already present, UPDATE_ONLY skips keys not already present.
+     * Unknown keys are quarantined under a namespaced key so they can never
+     * collide (DataStore keys compare by name only) with a future typed field.
+     * Explicit nulls in the backup clear the stored value.
      */
     suspend fun import(jsonString: String, options: ImportOptions = ImportOptions()): ImportResult {
         return try {
             val bundle = json.decodeFromString<SettingsBundle>(jsonString)
+
+            if (bundle.formatVersion > SettingsBundle.CURRENT_FORMAT_VERSION) {
+                return ImportResult.Error(
+                    ImportError.VERSION_TOO_NEW,
+                    "Unsupported backup format ${bundle.formatVersion}",
+                )
+            }
 
             if (options.validateAppId && bundle.appId != appId) {
                 return ImportResult.Error(ImportError.APP_MISMATCH, "Settings are from a different app: ${bundle.appId}")
@@ -89,16 +121,35 @@ class SettingsBackupManager<T>(
                         val field = schema.fieldByKey(keyName)
                         if (field != null) {
                             @Suppress("UNCHECKED_CAST")
-                            val decoded = (field as SettingField<T, Any?>).decodeValue(encodedValue)
-                            if (decoded != null) {
-                                field.write(prefs, decoded)
-                                applied.add(keyName)
-                            } else {
-                                skipped.add(keyName)
+                            val typedField = field as SettingField<T, Any?>
+                            when (options.mergeMode) {
+                                MergeMode.KEEP_EXISTING if typedField.hasValue(prefs) -> {
+                                    skipped.add(keyName)
+                                    continue
+                                }
+                                MergeMode.UPDATE_ONLY if !typedField.hasValue(prefs) -> {
+                                    skipped.add(keyName)
+                                    continue
+                                }
+                                else -> {}
+                            }
+                            try {
+                                val decoded = typedField.decodeValue(encodedValue)
+                                if (decoded == null && !isExplicitNullPayload(encodedValue)) {
+                                    // Unknown enum entries / corrupt payloads decode to
+                                    // null without an explicit-null marker: skip, keep current.
+                                    skipped.add(keyName)
+                                } else {
+                                    typedField.write(prefs, decoded)
+                                    applied.add(keyName)
+                                }
+                            } catch (e: Exception) {
+                                errors.add(keyName to (e.message ?: "Unknown error"))
                             }
                         } else {
-                            // Unknown key: write as raw string to preserve forward compatibility
-                            prefs[androidx.datastore.preferences.core.stringPreferencesKey(keyName)] = encodedValue
+                            // Quarantine: namespaced so a future typed field with the
+                            // same base name never throws ClassCastException on get().
+                            prefs[stringPreferencesKey(UNKNOWN_KEY_PREFIX + keyName)] = encodedValue
                             applied.add(keyName)
                         }
                     } catch (e: Exception) {
@@ -120,18 +171,27 @@ class SettingsBackupManager<T>(
         return try {
             val bundle = json.decodeFromString<SettingsBundle>(jsonString)
             val issues = mutableListOf<String>()
+            var valid = true
+
+            if (bundle.formatVersion > SettingsBundle.CURRENT_FORMAT_VERSION) {
+                issues.add("Unsupported backup format: ${bundle.formatVersion}")
+                valid = false
+            }
 
             if (bundle.appId != appId) {
                 issues.add("Different app ID: ${bundle.appId}")
+                valid = false
             }
 
             if (bundle.schemaVersion > schemaVersion) {
                 issues.add("Newer schema version: ${bundle.schemaVersion} > $schemaVersion")
+                valid = false
             }
 
             val checksum = calculateChecksum(bundle.settings)
             if (checksum != bundle.checksum) {
                 issues.add("Checksum mismatch - file may be corrupted")
+                valid = false
             }
 
             // Count known vs unknown keys
@@ -140,11 +200,11 @@ class SettingsBackupManager<T>(
             }
             val unknownKeys = bundle.settings.size - knownKeys
             if (unknownKeys > 0) {
-                issues.add("$unknownKeys unknown settings will be imported anyway")
+                issues.add("$unknownKeys unknown settings will be quarantined (not applied)")
             }
 
             ValidationResult(
-                isValid = issues.none { it.contains("corrupted") || it.contains("Newer schema") },
+                isValid = valid,
                 settingsCount = bundle.settings.size,
                 schemaVersion = bundle.schemaVersion,
                 exportedAt = bundle.exportedAt,
@@ -163,17 +223,29 @@ class SettingsBackupManager<T>(
         return try {
             val prefs = dataStore.data.first()
             val settingsMap = mutableMapOf<String, String>()
+            val failed = mutableListOf<String>()
 
             for (fieldName in fieldNames) {
                 val field = schema.fieldByName(fieldName) ?: continue
                 @Suppress("UNCHECKED_CAST")
                 val typedField = field as SettingField<T, Any?>
-                val value = typedField.read(prefs) ?: continue
-                val encoded = typedField.encodeValue(value) ?: continue
-                settingsMap[field.keyName] = encoded
+                if (!typedField.hasValue(prefs)) continue
+                val value = if (typedField.isExplicitNull(prefs)) null else typedField.read(prefs)
+                if (value == null && !typedField.isExplicitNull(prefs)) continue
+                try {
+                    val encoded = typedField.encodeValue(value) ?: continue
+                    settingsMap[field.keyName] = encoded
+                } catch (e: Exception) {
+                    failed.add(field.keyName)
+                }
+            }
+
+            if (failed.isNotEmpty()) {
+                return ExportResult.Error("Failed to encode: ${failed.joinToString()}")
             }
 
             val bundle = SettingsBundle(
+                formatVersion = SettingsBundle.CURRENT_FORMAT_VERSION,
                 schemaVersion = schemaVersion,
                 appId = appId,
                 exportedAt = Clock.System.now().toEpochMilliseconds(),
@@ -188,10 +260,28 @@ class SettingsBackupManager<T>(
         }
     }
 
-    private fun calculateChecksum(settings: Map<String, String>): String =
+    /**
+     * SHA-256 over the canonical key-sorted encoding. Replaces the previous
+     * 32-bit `hashCode()` which collided after ~65k backups (birthday bound)
+     * and admitted negative hex strings.
+     */
+    internal fun calculateChecksum(settings: Map<String, String>): String =
         settings.entries.sortedBy { it.key }
             .joinToString("|") { "${it.key}=${it.value}" }
-            .hashCode().toString(16)
+            .encodeUtf8().sha256().hex()
+
+    companion object {
+        /** Namespace for unknown backup keys; never collides with typed fields. */
+        const val UNKNOWN_KEY_PREFIX = "__unknown_backup__:"
+
+        /**
+         * Empty payload after the type prefix means explicit null
+         * ("b:", "l:", "s:", ...). Non-empty payloads that decode to null are
+         * unknown/corrupt values and must be skipped, not applied.
+         */
+        fun isExplicitNullPayload(encoded: String): Boolean =
+            encoded.substringAfter(':', missingDelimiterValue = "") .isEmpty()
+    }
 }
 
 data class ImportOptions(

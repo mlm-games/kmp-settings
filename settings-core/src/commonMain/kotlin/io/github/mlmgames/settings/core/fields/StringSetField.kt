@@ -16,13 +16,16 @@ class StringSetField<T>(
     private val json: Json = SerializedField.DefaultJson,
 ) : SettingField<T, Set<String>> {
     private val key = stringSetPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): Set<String> = getter(model)
     override fun set(model: T, value: Set<String>): T = setter(model, value)
     override fun read(prefs: Preferences): Set<String>? = prefs[key]
     override fun write(prefs: MutablePreferences, value: Set<String>) { prefs[key] = value }
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
-    override fun encodeValue(value: Set<String>): String = "ss:" + json.encodeToString(value.toList())
+    override fun encodeValue(value: Set<String>): String = "ss:" + json.encodeToString(value.sorted().toList())
     override fun decodeValue(encoded: String): Set<String> {
         val list = json.decodeFromString<List<String>>(encoded.substringAfter(':'))
         return list.toSet()

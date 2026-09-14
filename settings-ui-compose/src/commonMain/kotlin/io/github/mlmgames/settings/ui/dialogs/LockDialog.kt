@@ -26,15 +26,20 @@ fun SettingsLockDialog(
     val scope = rememberCoroutineScope()
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        // Dismiss is disabled while a PIN operation is in flight so the
+        // completion callback cannot fire after the caller has gone away.
+        onDismissRequest = { if (!isProcessing) onDismiss() },
         title = { Text(if (isSettingPin) "Set PIN" else "Enter PIN") },
         text = {
             Column {
                 OutlinedTextField(
                     value = pin,
                     onValueChange = {
-                        if (it.length <= 6) {
-                            pin = it
+                        // Digits only: the keyboard is a hint, paste can inject
+                        // anything. Non-digits are dropped, length capped at 6.
+                        val digits = it.filter { c -> c.isDigit() }.take(6)
+                        if (digits != pin) {
+                            pin = digits
                             error = null
                         }
                     },
@@ -53,8 +58,9 @@ fun SettingsLockDialog(
                     OutlinedTextField(
                         value = confirmPin,
                         onValueChange = {
-                            if (it.length <= 6) {
-                                confirmPin = it
+                            val digits = it.filter { c -> c.isDigit() }.take(6)
+                            if (digits != confirmPin) {
+                                confirmPin = digits
                                 error = null
                             }
                         },
@@ -105,7 +111,7 @@ fun SettingsLockDialog(
                         isProcessing = false
                     }
                 },
-                enabled = !isProcessing && pin.isNotEmpty()
+                enabled = !isProcessing && pin.isNotEmpty() && (!isSettingPin || confirmPin.isNotEmpty())
             ) {
                 Text("Confirm")
             }

@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.mlmgames.settings.ui.formatSliderValue
 import kotlin.math.roundToInt
 
 @Composable
@@ -17,7 +18,16 @@ fun SliderSettingDialog(
     onDismiss: () -> Unit,
     onValueSelected: (Float) -> Unit,
 ) {
-    var sliderValue by remember { mutableFloatStateOf(currentValue) }
+    // Guard misconfigured meta at the UI boundary: KSP validates, but
+    // hand-built schemas can still pass min>=max or step<=0, which would
+    // crash Slider (valueRange) or explode steps (Inf.toInt()).
+    val safeMin = min
+    val safeMax = if (max > min) max else min + 1f
+    val safeStep = if (step.isFinite() && step > 0f) step else (safeMax - safeMin)
+
+    var sliderValue by remember(currentValue, safeMin, safeMax, safeStep) {
+        mutableFloatStateOf(currentValue.coerceIn(safeMin, safeMax))
+    }
 
     SettingsDialog(
         onDismissRequest = onDismiss,
@@ -33,9 +43,8 @@ fun SliderSettingDialog(
             }
         }
     ) {
-        val formatted = remember(sliderValue) {
-            val v = (sliderValue * 10f).roundToInt() / 10f
-            v.roundToOneDecimal()
+        val formatted = remember(sliderValue, safeStep) {
+            formatSliderValue(sliderValue, safeStep)
         }
 
         Text(
@@ -44,18 +53,21 @@ fun SliderSettingDialog(
         )
         Spacer(Modifier.height(16.dp))
 
-        val stepsCount = (((max - min) / step).toInt() - 1).coerceAtLeast(0)
+        // steps = intervals - 1; snapping rounds to nearest (not truncation,
+        // which biased negative ranges toward zero).
+        val intervals = ((safeMax - safeMin) / safeStep).roundToInt().coerceAtLeast(1)
+        val stepsCount = (intervals - 1).coerceAtLeast(0)
 
         Slider(
             value = sliderValue,
             onValueChange = { v ->
-                val snapped = if (step <= 0f) v else {
-                    val n = ((v - min) / step).toInt()
-                    min + (n * step)
+                val snapped = run {
+                    val n = ((v - safeMin) / safeStep).roundToInt()
+                    safeMin + (n * safeStep)
                 }
-                sliderValue = snapped.coerceIn(min, max)
+                sliderValue = snapped.coerceIn(safeMin, safeMax)
             },
-            valueRange = min..max,
+            valueRange = safeMin..safeMax,
             steps = stepsCount
         )
 
@@ -64,12 +76,12 @@ fun SliderSettingDialog(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = min.toString(),
+                text = safeMin.toString(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = max.toString(),
+                text = safeMax.toString(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

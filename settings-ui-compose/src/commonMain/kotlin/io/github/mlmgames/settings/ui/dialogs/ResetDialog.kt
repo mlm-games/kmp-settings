@@ -1,7 +1,9 @@
 package io.github.mlmgames.settings.ui.dialogs
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,7 +36,13 @@ fun <T> ResetSettingsDialog(
     var isResetting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val categories = remember(platform) { schema.orderedCategories(platform) }
+    val categories = remember(schema, platform) { schema.orderedCategories(platform) }
+    // Drop a stale category selection when the option or the visible set changes.
+    LaunchedEffect(selectedOption, categories) {
+        if (selectedOption != ResetOption.CATEGORY || selectedCategory !in categories) {
+            selectedCategory = null
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -76,24 +84,31 @@ fun <T> ResetSettingsDialog(
                     Text("Select category:", style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.height(8.dp))
 
-                    categories.forEach { cat ->
-                        val catTitle = categoryTitles[cat] ?: cat.simpleName ?: "Unknown"
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .selectable(
+                    // Scrollable: many categories must not overflow the dialog.
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        categories.forEach { cat ->
+                            val catTitle = categoryTitles[cat] ?: cat.simpleName ?: "Unknown"
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = selectedCategory == cat,
+                                        onClick = { selectedCategory = cat }
+                                    )
+                                    .padding(vertical = 6.dp, horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
                                     selected = selectedCategory == cat,
                                     onClick = { selectedCategory = cat }
                                 )
-                                .padding(vertical = 6.dp, horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selectedCategory == cat,
-                                onClick = { selectedCategory = cat }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(catTitle)
+                                Spacer(Modifier.width(8.dp))
+                                Text(catTitle)
+                            }
                         }
                     }
                 }

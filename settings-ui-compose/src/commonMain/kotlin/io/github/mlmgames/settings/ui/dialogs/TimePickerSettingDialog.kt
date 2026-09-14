@@ -17,6 +17,11 @@ fun TimePickerSettingDialog(
         initialMinute = clamped % 60,
         is24Hour = true,
     )
+    // Reset the picker if a different field retargets the shared dialog state.
+    LaunchedEffect(title, currentMinutes) {
+        state.hour = clamped / 60
+        state.minute = clamped % 60
+    }
 
     TimePickerDialog(
         title = { Text(title) },

@@ -21,9 +21,13 @@ class StringListField<T>(
 ) : SettingField<T, List<String>> {
     private val key = stringPreferencesKey(keyName)
     private val serializer = ListSerializer(String.serializer())
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): List<String> = getter(model)
     override fun set(model: T, value: List<String>): T = setter(model, value)
+
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun read(prefs: Preferences): List<String>? {
         val jsonString = prefs[key] ?: return null
@@ -48,9 +52,13 @@ class IntListField<T>(
 ) : SettingField<T, List<Int>> {
     private val key = stringPreferencesKey(keyName)
     private val serializer = ListSerializer(Int.serializer())
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): List<Int> = getter(model)
     override fun set(model: T, value: List<Int>): T = setter(model, value)
+
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun read(prefs: Preferences): List<Int>? {
         val jsonString = prefs[key] ?: return null
@@ -75,9 +83,13 @@ class LongListField<T>(
 ) : SettingField<T, List<Long>> {
     private val key = stringPreferencesKey(keyName)
     private val serializer = ListSerializer(Long.serializer())
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): List<Long> = getter(model)
     override fun set(model: T, value: List<Long>): T = setter(model, value)
+
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun read(prefs: Preferences): List<Long>? {
         val jsonString = prefs[key] ?: return null
@@ -105,9 +117,13 @@ abstract class BaseMapField<T, K, V>(
     private val json: Json = SerializedField.DefaultJson,
 ) : SettingField<T, Map<K, V>> {
     private val key = stringPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
 
     override fun get(model: T): Map<K, V> = getter(model)
     override fun set(model: T, value: Map<K, V>): T = setter(model, value)
+
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun read(prefs: Preferences): Map<K, V>? {
         val jsonString = prefs[key] ?: return null
@@ -118,12 +134,12 @@ abstract class BaseMapField<T, K, V>(
         }
     }
 
+    /**
+     * Serialization of maps is infallible for supported serializers; let
+     * failures propagate so callers can distinguish success from data loss.
+     */
     override fun write(prefs: MutablePreferences, value: Map<K, V>) {
-        try {
-            prefs[key] = json.encodeToString(serializer, value)
-        } catch (e: Exception) {
-            // Ignore serialization errors
-        }
+        prefs[key] = json.encodeToString(serializer, value)
     }
 
     override fun encodeValue(value: Map<K, V>): String = "j:" + json.encodeToString(serializer, value)

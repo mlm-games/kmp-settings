@@ -8,7 +8,7 @@ import kotlin.reflect.KClass
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.SOURCE)
 annotation class Range(
-    val min: Double = Double.MIN_VALUE,
+    val min: Double = -Double.MAX_VALUE,
     val max: Double = Double.MAX_VALUE,
     val errorMessage: String = "Value out of range",
     val errorMessageRes: Int = 0

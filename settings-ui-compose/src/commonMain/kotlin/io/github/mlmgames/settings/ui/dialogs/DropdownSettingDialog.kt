@@ -16,7 +16,9 @@ fun DropdownSettingDialog(
     onDismiss: () -> Unit,
     onOptionSelected: (Int) -> Unit,
 ) {
-    var selected by remember { mutableStateOf(selectedIndex) }
+    // Keyed to props so a re-targeted dialog (shared currentField) never shows
+    // the previous field's selection.
+    var selected by remember(title, options, selectedIndex) { mutableStateOf(selectedIndex) }
 
     SettingsDialog(
         onDismissRequest = onDismiss,

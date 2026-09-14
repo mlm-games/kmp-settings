@@ -11,11 +11,14 @@ class BooleanField<T>(
     private val getter: (T) -> Boolean,
     private val setter: (T, Boolean) -> T,
 ) : SettingField<T, Boolean> {
-    private val key = booleanPreferencesKey(keyName)
+    internal val key = booleanPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
     override fun get(model: T) = getter(model)
     override fun set(model: T, value: Boolean) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Boolean) { prefs[key] = value }
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
     override fun encodeValue(value: Boolean): String = "b:$value"
     override fun decodeValue(encoded: String): Boolean = encoded.substringAfter(':').toBooleanStrict()
 }
@@ -28,10 +31,13 @@ class IntField<T>(
     private val setter: (T, Int) -> T,
 ) : SettingField<T, Int> {
     private val key = intPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
     override fun get(model: T) = getter(model)
     override fun set(model: T, value: Int) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Int) { prefs[key] = value }
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun toUiSliderValue(model: T): Float = getter(model).toFloat()
     override fun fromUiSliderValue(value: Float): Int = value.toInt()
@@ -49,10 +55,13 @@ class LongField<T>(
     private val setter: (T, Long) -> T,
 ) : SettingField<T, Long> {
     private val key = longPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
     override fun get(model: T) = getter(model)
     override fun set(model: T, value: Long) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Long) { prefs[key] = value }
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
     override fun encodeValue(value: Long): String = "l:$value"
     override fun decodeValue(encoded: String): Long = encoded.substringAfter(':').toLong()
 }
@@ -65,10 +74,13 @@ class FloatField<T>(
     private val setter: (T, Float) -> T,
 ) : SettingField<T, Float> {
     private val key = floatPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
     override fun get(model: T) = getter(model)
     override fun set(model: T, value: Float) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Float) { prefs[key] = value }
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
 
     override fun toUiSliderValue(model: T): Float = getter(model)
     override fun fromUiSliderValue(value: Float): Float = value
@@ -84,10 +96,13 @@ class DoubleField<T>(
     private val setter: (T, Double) -> T,
 ) : SettingField<T, Double> {
     private val key = doublePreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
     override fun get(model: T) = getter(model)
     override fun set(model: T, value: Double) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: Double) { prefs[key] = value }
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
     override fun encodeValue(value: Double): String = "d:$value"
     override fun decodeValue(encoded: String): Double = encoded.substringAfter(':').toDouble()
 }
@@ -100,10 +115,13 @@ class StringField<T>(
     private val setter: (T, String) -> T,
 ) : SettingField<T, String> {
     private val key = stringPreferencesKey(keyName)
+    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
     override fun get(model: T) = getter(model)
     override fun set(model: T, value: String) = setter(model, value)
     override fun read(prefs: Preferences) = prefs[key]
     override fun write(prefs: MutablePreferences, value: String) { prefs[key] = value }
+    override fun hasValue(prefs: Preferences): Boolean = key in prefs
+    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
     override fun encodeValue(value: String): String = "s:$value"
     override fun decodeValue(encoded: String): String = encoded.substringAfter(':')
 }

@@ -15,7 +15,7 @@ fun InputDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var input by remember { mutableStateOf(value) }
+    var input by remember(title, value) { mutableStateOf(value) }
     val valid = validator(input)
 
     SettingsDialog(

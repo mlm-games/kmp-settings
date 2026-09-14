@@ -17,7 +17,7 @@ fun <T> SelectionDialog(
     onItemSelected: (T) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var selected by remember { mutableStateOf(selectedItem) }
+    var selected by remember(title, items, selectedItem) { mutableStateOf(selectedItem) }
 
     SettingsDialog(
         onDismissRequest = onDismiss,

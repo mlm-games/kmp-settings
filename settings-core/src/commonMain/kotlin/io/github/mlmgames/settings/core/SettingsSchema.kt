@@ -59,7 +59,8 @@ interface SettingsSchema<T> {
         val dep = meta.dependsOn
         if (dep.isBlank()) return true
 
-        val depField = fieldByName(dep) ?: return true
+        val depField = fieldByName(dep)
+            ?: throw IllegalArgumentException("Unknown dependsOn target: '$dep' (field '${field.name}')")
 
         @Suppress("UNCHECKED_CAST")
         val value = (depField as SettingField<T, Any?>).get(model)
@@ -67,15 +68,21 @@ interface SettingsSchema<T> {
         return when (value) {
             is Boolean -> value
             is Int -> value != 0
+            is Long -> value != 0L
+            is Float -> value != 0f
+            is Double -> value != 0.0
             is String -> value.isNotBlank()
+            is Collection<*> -> value.isNotEmpty()
+            is Map<*, *> -> value.isNotEmpty()
+            is Enum<*> -> true
             null -> false
             else -> true
         }
     }
 
-    /** Get fields that can be reset */
+    /** Get fields that can be reset (excludes non-persisted placeholders and noReset). */
     fun resettableFields(): List<SettingField<T, *>> =
-        fields.filter { it.meta?.noReset != true }
+        fields.filter { it.isResettable && it.meta?.noReset != true }
 
     /** Get fields in a category that can be reset */
     fun resettableFieldsInCategory(category: KClass<*>): List<SettingField<T, *>> =

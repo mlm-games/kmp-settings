@@ -5,10 +5,11 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Listener for setting changes.
@@ -26,46 +27,63 @@ fun interface FieldChangeListener<V> {
 
 /**
  * Repository for reading/writing settings via DataStore.
+ *
+ * DataStore serializes all writes through a single actor, so the check-then-act
+ * sequences below cannot interleave mid-transaction. Reads are taken from the
+ * transaction snapshot (not a stale [flow] emission) to keep diffs consistent.
+ * Listeners are invoked after the transaction commits so a re-entrant
+ * repository call throws IllegalStateException from DataStore instead of
+ * deadlocking, and so retries never produce duplicate callbacks.
  */
 class SettingsRepository<T>(
     private val dataStore: DataStore<Preferences>,
     val schema: SettingsSchema<T>,
 ) {
+    private val listenerMutex = Mutex()
     private val changeListeners = mutableListOf<SettingChangeListener<T>>()
     private val fieldListeners = mutableMapOf<String, MutableList<FieldChangeListener<*>>>()
 
     /** Flow of current settings model */
     val flow: Flow<T> = dataStore.data
-        .map { prefs ->
-            var model = schema.default
-            for (field in schema.fields) {
-                @Suppress("UNCHECKED_CAST")
-                val typedField = field as SettingField<T, Any?>
-                val value = typedField.read(prefs)
-                if (value != null) {
-                    model = typedField.set(model, value)
-                }
-            }
-            model
-        }
+        .map { prefs -> buildModel(prefs) }
         .distinctUntilChanged()
 
-    /** Add a global change listener */
-    fun addChangeListener(listener: SettingChangeListener<T>) {
-        changeListeners.add(listener)
+    private fun buildModel(prefs: Preferences): T {
+        var model = schema.default
+        for (field in schema.fields) {
+            @Suppress("UNCHECKED_CAST")
+            val typedField = field as SettingField<T, Any?>
+            if (!typedField.hasValue(prefs)) continue
+            if (typedField.isExplicitNull(prefs)) {
+                model = typedField.set(model, null)
+                continue
+            }
+            val value = typedField.read(prefs) ?: continue
+            // Corrupt values decode to null with isExplicitNull()==false:
+            // keep the schema default instead of persisting a silent reset.
+            model = typedField.set(model, value)
+        }
+        return model
     }
 
-    fun removeChangeListener(listener: SettingChangeListener<T>) {
-        changeListeners.remove(listener)
+    /** Add a global change listener */
+    suspend fun addChangeListener(listener: SettingChangeListener<T>) {
+        listenerMutex.withLock { changeListeners.add(listener) }
+    }
+
+    suspend fun removeChangeListener(listener: SettingChangeListener<T>) {
+        listenerMutex.withLock { changeListeners.remove(listener) }
     }
 
     /** Add a listener for a specific field */
-    fun <V> addFieldListener(fieldName: String, listener: FieldChangeListener<V>) {
-        fieldListeners.getOrPut(fieldName) { mutableListOf() }.add(listener)
+    suspend fun <V> addFieldListener(fieldName: String, listener: FieldChangeListener<V>) {
+        listenerMutex.withLock {
+            fieldListeners.getOrPut(fieldName) { mutableListOf() }.add(listener)
+        }
     }
 
-    fun removeFieldListener(fieldName: String, listener: FieldChangeListener<*>) {
-        fieldListeners[fieldName]?.remove(listener)
+    suspend fun removeFieldListener(fieldName: String, listener: FieldChangeListener<*>) {
+        listenerMutex.withLock { fieldListeners[fieldName]?.remove(listener) }
     }
 
     /** Observe a specific field as a Flow */
@@ -81,10 +99,11 @@ class SettingsRepository<T>(
 
     /** Update settings with a transform function */
     suspend fun update(transform: (T) -> T) {
-        val current = flow.first()
-        val updated = transform(current)
-
+        // Snapshot of changes computed inside the transaction; notification after commit.
+        val changes = mutableListOf<Triple<SettingField<T, *>, Any?, Any?>>()
         dataStore.edit { prefs ->
+            val current = buildModel(prefs)
+            val updated = transform(current)
             for (field in schema.fields) {
                 @Suppress("UNCHECKED_CAST")
                 val typedField = field as SettingField<T, Any?>
@@ -92,28 +111,41 @@ class SettingsRepository<T>(
                 val newValue = typedField.get(updated)
                 if (oldValue != newValue) {
                     typedField.write(prefs, newValue)
-                    notifyChange(field, oldValue, newValue)
+                    if (typedField.read(prefs) != newValue && !typedField.isExplicitNull(prefs)) {
+                        throw IllegalStateException("Write verification failed for ${field.name}")
+                    }
+                    changes.add(Triple(field, oldValue, newValue))
                 }
             }
         }
+        changes.forEach { (field, oldValue, newValue) ->
+            notifyChange(field, oldValue, newValue)
+        }
     }
 
-    /** Set a single field by name */
-    suspend fun set(name: String, value: Any) {
-        val field = schema.fieldByName(name) ?: return
-        val current = flow.first()
+    /** Set a single field by name. Unknown names throw instead of silently dropping. */
+    suspend fun set(name: String, value: Any?) {
+        val field = schema.fieldByName(name)
+            ?: throw IllegalArgumentException("Unknown field: $name")
 
         @Suppress("UNCHECKED_CAST")
         val typedField = field as SettingField<T, Any?>
-        val oldValue = typedField.get(current)
-
-        if (oldValue == value) return
-
+        var appliedChange: Triple<SettingField<T, *>, Any?, Any?>? = null
         dataStore.edit { prefs ->
-            typedField.write(prefs, value)
-        }
+            val current = buildModel(prefs)
+            val oldValue = typedField.get(current)
+            if (oldValue == value) return@edit
 
-        notifyChange(field, oldValue, value)
+            validateWriteValue(typedField, value)
+            typedField.write(prefs, value)
+            if (typedField.read(prefs) != value && !typedField.isExplicitNull(prefs)) {
+                throw IllegalStateException("Write verification failed for $name")
+            }
+            appliedChange = Triple(field, oldValue, value)
+        }
+        appliedChange?.let { (field, oldValue, newValue) ->
+            notifyChange(field, oldValue, newValue)
+        }
     }
 
     /** Get current value of a field */
@@ -125,12 +157,24 @@ class SettingsRepository<T>(
         return (field as SettingField<T, V>).get(current)
     }
 
+    private fun validateWriteValue(field: SettingField<T, *>, value: Any?) {
+        // Lightweight runtime guard: Unit placeholders accept only Unit.
+        if (field is io.github.mlmgames.settings.core.fields.UnitField<*> && value != Unit) {
+            throw IllegalArgumentException("Field ${field.name} is a Button action and accepts only Unit")
+        }
+    }
+
     private suspend fun notifyChange(field: SettingField<T, *>, oldValue: Any?, newValue: Any?) {
-        changeListeners.forEach { listener ->
+        val globals: List<SettingChangeListener<T>>
+        val scoped: List<FieldChangeListener<*>>
+        listenerMutex.withLock {
+            globals = changeListeners.toList()
+            scoped = fieldListeners[field.name]?.toList().orEmpty()
+        }
+        globals.forEach { listener ->
             listener.onChanged(field, oldValue, newValue)
         }
-
-        fieldListeners[field.name]?.forEach { listener ->
+        scoped.forEach { listener ->
             @Suppress("UNCHECKED_CAST")
             (listener as FieldChangeListener<Any?>).onChanged(oldValue, newValue)
         }

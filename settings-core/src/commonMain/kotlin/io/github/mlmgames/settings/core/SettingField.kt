@@ -48,4 +48,23 @@ interface SettingField<T, V> {
 
     /** Decode a type-prefixed string back to a typed value for backup import. */
     fun decodeValue(encoded: String): V? = null
+
+    /**
+     * Whether DataStore currently holds a value for this field.
+     * Distinguishes explicit null (marker present) from absent.
+     */
+    fun hasValue(prefs: Preferences): Boolean = read(prefs) != null
+
+    /**
+     * Whether the stored value explicitly represents null.
+     * Only meaningful when [hasValue] is true. Default false for non-nullable fields.
+     */
+    fun isExplicitNull(prefs: Preferences): Boolean = false
+
+    /** Remove any stored value (all physical keys) for this field. */
+    fun clear(prefs: MutablePreferences) {}
+
+    /** False for non-persisted placeholders (e.g. Button/Unit). Excluded from reset-all. */
+    val isResettable: Boolean
+        get() = true
 }

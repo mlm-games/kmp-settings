@@ -85,12 +85,15 @@ data class SettingMeta(
         if (platforms.contains(SettingPlatform.ALL)) return true
         if (platforms.contains(currentPlatform)) return true
 
+        // DESKTOP is a group alias for JVM + Linux: a DESKTOP-marked setting is
+        // visible on JVM/Linux, and a JVM/LINUX-marked setting is visible when
+        // the runtime reports DESKTOP. WEB is standalone and never aliases.
         if (currentPlatform == SettingPlatform.JVM || currentPlatform == SettingPlatform.LINUX) {
             if (platforms.contains(SettingPlatform.DESKTOP)) return true
         }
-
-        if (currentPlatform == SettingPlatform.WEB) {
-            if (platforms.contains(SettingPlatform.DESKTOP)) return true
+        if (currentPlatform == SettingPlatform.DESKTOP) {
+            if (platforms.contains(SettingPlatform.JVM)) return true
+            if (platforms.contains(SettingPlatform.LINUX)) return true
         }
 
         return false
@@ -104,31 +107,42 @@ data class SettingMeta(
                 null -> true
                 is String -> value.isBlank()
                 is Collection<*> -> value.isEmpty()
+                is Map<*, *> -> value.isEmpty()
                 else -> false
             }
             if (isEmpty) {
-                return ValidationResult.Invalid(resolveErrorMessage(rules, provider))
+                return ValidationResult.Invalid(
+                    message = resolveErrorMessage(rules, provider).ifBlank { "This field is required" },
+                )
             }
         }
 
         rules.range?.let { range ->
+            // Non-numeric values skip range (applicability is enforced at KSP
+            // time); they are not range violations.
             val numValue = (value as? Number)?.toDouble() ?: return@let
-            if (numValue !in range) {
-                return ValidationResult.Invalid(resolveErrorMessage(rules, provider))
+            if (numValue.isNaN() || numValue !in range) {
+                return ValidationResult.Invalid(
+                    message = resolveErrorMessage(rules, provider).ifBlank { "Value out of range" },
+                )
             }
         }
 
         rules.length?.let { lengthRange ->
             val strValue = value as? String ?: return@let
             if (strValue.length !in lengthRange) {
-                return ValidationResult.Invalid(resolveErrorMessage(rules, provider))
+                return ValidationResult.Invalid(
+                    message = resolveErrorMessage(rules, provider).ifBlank { "Invalid length" },
+                )
             }
         }
 
         rules.pattern?.let { pattern ->
             val strValue = value as? String ?: return@let
             if (!pattern.matches(strValue)) {
-                return ValidationResult.Invalid(resolveErrorMessage(rules, provider))
+                return ValidationResult.Invalid(
+                    message = resolveErrorMessage(rules, provider).ifBlank { "Invalid format" },
+                )
             }
         }
 

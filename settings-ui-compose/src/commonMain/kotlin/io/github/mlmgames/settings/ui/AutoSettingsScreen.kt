@@ -22,6 +22,7 @@ import io.github.mlmgames.settings.core.types.Toggle
 import io.github.mlmgames.settings.ui.components.*
 import io.github.mlmgames.settings.ui.dialogs.*
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.reflect.KClass
 
 /**
@@ -96,6 +97,24 @@ fun <T> AutoSettingsScreen(
     var showTimePicker by remember { mutableStateOf(false) }
     var currentField by remember { mutableStateOf<SettingField<T, *>?>(null) }
 
+    // Single-dialog policy lambdas, declared before the list so row onClick
+    // handlers can reference them. Opening one dialog closes any other, and
+    // every dismiss path nulls the field so stale state never leaks.
+    val openDialog: (SettingField<T, *>, String) -> Unit = { field, which ->
+        currentField = field
+        showDropdown = which == "dropdown"
+        showSlider = which == "slider"
+        showTextInput = which == "text"
+        showTimePicker = which == "time"
+    }
+    val closeDialogs: () -> Unit = {
+        showDropdown = false
+        showSlider = false
+        showTextInput = false
+        showTimePicker = false
+        currentField = null
+    }
+
     // Confirmation dialog state
     var pendingConfirmation by remember { mutableStateOf<PendingConfirmation<T>?>(null) }
 
@@ -110,6 +129,9 @@ fun <T> AutoSettingsScreen(
     }
 
     // Handle setting change with validation and confirmation
+    // Captures the latest value/schema via rememberUpdatedState-equivalent:
+    // handleSetValue reads `value`/`schema` from composition locals at call
+    // time, so dialogs always validate against current state.
     val handleSetValue: (SettingField<T, *>, Any) -> Unit = handleSetValue@{ field, newValue ->
         val meta = field.meta
 
@@ -124,11 +146,21 @@ fun <T> AutoSettingsScreen(
             }
         }
 
+        // Re-check dependency at commit time: a dialog may have been opened
+        // while enabled, then the dependency toggled off underneath.
+        if (!schema.isEnabled(value, field)) {
+            showSnackbar("Setting is disabled")
+            return@handleSetValue
+        }
+
         // Check for confirmation requirement
         if (meta?.confirmation != null) {
+            // Queue: a second confirmation replaces the first only after the
+            // first is resolved; pendingConfirmation holds at most one.
             pendingConfirmation = PendingConfirmation(
                 field = field,
                 value = newValue,
+                isAction = false,
                 config = meta.confirmation!!
             )
         } else {
@@ -138,8 +170,14 @@ fun <T> AutoSettingsScreen(
 
     // Handle button actions
     val handleAction: (SettingField<T, *>) -> Unit = handleAction@{ field ->
-        val meta = field.meta ?: return@handleAction
-        val actionClass = meta.actionClass ?: return@handleAction
+        val meta = field.meta ?: run {
+            showSnackbar("Action unavailable")
+            return@handleAction
+        }
+        val actionClass = meta.actionClass ?: run {
+            showSnackbar("Action unavailable")
+            return@handleAction
+        }
 
         val action = ActionRegistry.getAction(actionClass)
 
@@ -147,6 +185,7 @@ fun <T> AutoSettingsScreen(
             pendingConfirmation = PendingConfirmation(
                 field = field,
                 value = Unit,
+                isAction = true,
                 config = ConfirmationConfig(
                     title = action.confirmationTitle,
                     message = action.confirmationMessage,
@@ -192,7 +231,7 @@ fun <T> AutoSettingsScreen(
                         categoryClass.simpleName ?: "Unknown"
                 }
 
-                item(key = "header_${categoryClass.simpleName}") {
+                item(key = "header_${categoryClass.qualifiedName}") {
                     Text(
                         text = categoryTitle,
                         style = MaterialTheme.typography.titleMedium,
@@ -200,7 +239,7 @@ fun <T> AutoSettingsScreen(
                     )
                 }
 
-                item(key = "section_${categoryClass.simpleName}") {
+                item(key = "section_${categoryClass.qualifiedName}") {
                     SettingsSection(title = "") {
                         Column {
                             fields.forEach { field ->
@@ -213,8 +252,13 @@ fun <T> AutoSettingsScreen(
 
                                 val customHandler = customHandlerMap[meta.type]
                                 if (customHandler != null) {
+                                    // Route through handleSetValue so custom types
+                                    // keep validation + confirmation guarantees.
                                     @Suppress("UNCHECKED_CAST")
-                                    customHandler.render(field, meta, value, enabled, onSet)
+                                    customHandler.render(field, meta, value, enabled) { name, v ->
+                                        val target = schema.fieldByName(name) ?: field
+                                        handleSetValue(target, v)
+                                    }
                                     return@forEach
                                 }
 
@@ -236,24 +280,22 @@ fun <T> AutoSettingsScreen(
                                     Dropdown::class -> {
                                         val options = field.getDropdownOptions()
                                             ?: meta.resolvedOptions(stringProvider)
-                                        val idx = field.toUiDropdownIndex(value) ?: 0
+                                        // Nullable selection: null stays null (subtitle
+                                        // shows "(not set)") instead of coercing to index 0.
+                                        val idx = field.toUiDropdownIndex(value)
                                         SettingsItem(
                                             title = title,
-                                            subtitle = options.getOrNull(idx) ?: "Unknown",
+                                            subtitle = if (idx == null) "(not set)" else options.getOrNull(idx) ?: "Unknown",
                                             description = description,
                                             enabled = enabled,
-                                            onClick = { currentField = field; showDropdown = true }
+                                            onClick = { openDialog(field, "dropdown") }
                                         )
                                     }
 
                                     Slider::class -> {
                                         val sliderVal = field.toUiSliderValue(value)
                                         val subtitle = sliderVal?.let {
-                                            if (meta.step < 1f) {
-                                                ((it * 10).toInt() / 10f).toString()
-                                            } else {
-                                                it.toInt().toString()
-                                            }
+                                            formatSliderValue(it, meta.step)
                                         } ?: ""
 
                                         SettingsItem(
@@ -261,7 +303,7 @@ fun <T> AutoSettingsScreen(
                                             subtitle = subtitle,
                                             description = description,
                                             enabled = enabled,
-                                            onClick = { currentField = field; showSlider = true }
+                                            onClick = { openDialog(field, "slider") }
                                         )
                                     }
 
@@ -284,7 +326,15 @@ fun <T> AutoSettingsScreen(
                                                 subtitle = stringField.get(value).ifBlank { "(empty)" },
                                                 description = description,
                                                 enabled = enabled,
-                                                onClick = { currentField = field; showTextInput = true }
+                                                onClick = { openDialog(field, "text") }
+                                            )
+                                        } else {
+                                            SettingsItem(
+                                                title = title,
+                                                subtitle = "Unsupported type for text input",
+                                                description = description,
+                                                enabled = false,
+                                                onClick = {}
                                             )
                                         }
                                     }
@@ -299,9 +349,29 @@ fun <T> AutoSettingsScreen(
                                                 subtitle = formatMinutesOfDay(minutes),
                                                 description = description,
                                                 enabled = enabled,
-                                                onClick = { currentField = field; showTimePicker = true }
+                                                onClick = { openDialog(field, "time") }
+                                            )
+                                        } else {
+                                            SettingsItem(
+                                                title = title,
+                                                subtitle = "Unsupported type for time picker",
+                                                description = description,
+                                                enabled = false,
+                                                onClick = {}
                                             )
                                         }
+                                    }
+
+                                    else -> {
+                                        // Unknown/custom type without a handler: visible
+                                        // fallback instead of a silent blank row.
+                                        SettingsItem(
+                                            title = title,
+                                            subtitle = "Unsupported setting type",
+                                            description = description,
+                                            enabled = false,
+                                            onClick = {}
+                                        )
                                     }
                                 }
                             }
@@ -321,24 +391,27 @@ fun <T> AutoSettingsScreen(
         }
     }
 
-    // Dialogs
+    // Dialogs (single `currentField` policy; openDialog/closeDialogs above).
     val cf = currentField
     if (showDropdown && cf?.meta != null) {
         val meta = cf.meta!!
         val options = cf.getDropdownOptions() ?: meta.resolvedOptions(stringProvider)
-        val currentIdx = cf.toUiDropdownIndex(value) ?: 0
+        // -1 = explicit-null selection for nullable dropdowns.
+        val currentIdx = cf.toUiDropdownIndex(value) ?: -1
 
         DropdownSettingDialog(
             title = meta.resolvedTitle(stringProvider),
             options = options,
             selectedIndex = currentIdx,
-            onDismiss = { showDropdown = false },
+            onDismiss = { closeDialogs() },
             onOptionSelected = { idx ->
                 val newValue = cf.fromUiDropdownIndex(idx)
                 if (newValue != null) {
                     handleSetValue(cf, newValue)
+                } else {
+                    showSnackbar("Invalid selection")
                 }
-                showDropdown = false
+                closeDialogs()
             }
         )
     }
@@ -353,13 +426,15 @@ fun <T> AutoSettingsScreen(
             min = meta.min,
             max = meta.max,
             step = meta.step,
-            onDismiss = { showSlider = false },
+            onDismiss = { closeDialogs() },
             onValueSelected = { v ->
                 val newValue = cf.fromUiSliderValue(v)
                 if (newValue != null) {
                     handleSetValue(cf, newValue)
+                } else {
+                    showSnackbar("Invalid value")
                 }
-                showSlider = false
+                closeDialogs()
             }
         )
     }
@@ -373,10 +448,10 @@ fun <T> AutoSettingsScreen(
                 title = meta.resolvedTitle(stringProvider),
                 label = meta.resolvedTitle(stringProvider),
                 value = stringField.get(value),
-                onDismiss = { showTextInput = false },
+                onDismiss = { closeDialogs() },
                 onConfirm = { newValue ->
                     handleSetValue(cf, newValue)
-                    showTextInput = false
+                    closeDialogs()
                 },
                 validator = { input ->
                     if (meta.validation != null) {
@@ -385,7 +460,7 @@ fun <T> AutoSettingsScreen(
                 }
             )
         } else {
-            showTextInput = false
+            closeDialogs()
         }
     }
 
@@ -397,23 +472,25 @@ fun <T> AutoSettingsScreen(
             TimePickerSettingDialog(
                 title = meta.resolvedTitle(stringProvider),
                 currentMinutes = intField.get(value),
-                onDismiss = { showTimePicker = false },
+                onDismiss = { closeDialogs() },
                 onTimeSelected = { minutes ->
                     handleSetValue(cf, minutes)
-                    showTimePicker = false
+                    closeDialogs()
                 }
             )
         } else {
-            showTimePicker = false
+            closeDialogs()
         }
     }
 
-    // Confirmation dialog
+    // Confirmation dialog: explicit isAction flag replaces the fragile
+    // `value == Unit` sentinel, and the value is re-validated at confirm time
+    // (validate-then-confirm window) plus re-checked against dependencies.
     pendingConfirmation?.let { pending ->
         SettingConfirmationDialog(
             config = pending.config,
             onConfirm = {
-                if (pending.value == Unit) {
+                if (pending.isAction) {
                     val actionClass = pending.field.meta?.actionClass
                     if (actionClass != null) {
                         scope.launch {
@@ -422,6 +499,22 @@ fun <T> AutoSettingsScreen(
                         }
                     }
                 } else {
+                    val meta = pending.field.meta
+                    if (meta?.validation != null) {
+                        when (val result = meta.validate(pending.value, stringProvider)) {
+                            is ValidationResult.Valid -> { /* proceed */ }
+                            is ValidationResult.Invalid -> {
+                                showSnackbar(result.message)
+                                pendingConfirmation = null
+                                return@SettingConfirmationDialog
+                            }
+                        }
+                    }
+                    if (!schema.isEnabled(value, pending.field)) {
+                        showSnackbar("Setting is disabled")
+                        pendingConfirmation = null
+                        return@SettingConfirmationDialog
+                    }
                     onSet(pending.field.name, pending.value)
                 }
                 pendingConfirmation = null
@@ -434,8 +527,19 @@ fun <T> AutoSettingsScreen(
 private data class PendingConfirmation<T>(
     val field: SettingField<T, *>,
     val value: Any,
+    val isAction: Boolean,
     val config: ConfirmationConfig,
 )
+
+/** Shared rounding: dialog and subtitle must agree (round, not truncate). */
+internal fun formatSliderValue(value: Float, step: Float): String {
+    return if (step < 1f) {
+        val v = (value * 10f).roundToInt() / 10f
+        v.toString()
+    } else {
+        value.roundToInt().toString()
+    }
+}
 
 private fun formatMinutesOfDay(totalMinutes: Int, use24Hour: Boolean = true): String {
     val clamped = totalMinutes.coerceIn(0, 1439)

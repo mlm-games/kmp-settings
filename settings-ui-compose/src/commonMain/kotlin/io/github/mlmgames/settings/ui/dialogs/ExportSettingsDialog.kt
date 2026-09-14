@@ -16,9 +16,8 @@ fun <T> ExportSettingsDialog(
 ) {
     var isExporting by remember { mutableStateOf(true) }
     var result by remember { mutableStateOf<ExportResult?>(null) }
-    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(backupManager) {
         result = backupManager.export()
         isExporting = false
     }
@@ -62,11 +61,8 @@ fun <T> ExportSettingsDialog(
                 }
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
+        // Single primary action: Share/Close confirms, no competing Cancel.
+        dismissButton = null
     )
 }
 
@@ -82,8 +78,10 @@ fun <T> ImportSettingsDialog(
     var isImporting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(jsonContent) {
+    LaunchedEffect(backupManager, jsonContent) {
         validation = backupManager.validate(jsonContent)
+        importResult = null
+        isImporting = false
     }
 
     AlertDialog(
@@ -100,11 +98,14 @@ fun <T> ImportSettingsDialog(
                                 if (r.skippedCount > 0) {
                                     Text("Skipped: ${r.skippedCount} settings")
                                 }
+                                if (r.errors.isNotEmpty()) {
+                                    Text("${r.errors.size} errors (see log)")
+                                }
                             }
                             is ImportResult.Error -> {
                                 Text("Import failed: ${r.message}")
                             }
-                            else -> {}
+                            null -> {}
                         }
                     }
                     isImporting -> {
@@ -121,6 +122,9 @@ fun <T> ImportSettingsDialog(
                             }
                         }
                     }
+                    else -> {
+                        CircularProgressIndicator()
+                    }
                 }
             }
         },
@@ -130,9 +134,9 @@ fun <T> ImportSettingsDialog(
                     onClick = {
                         isImporting = true
                         scope.launch {
-                            importResult = backupManager.import(jsonContent)
+                            val res = backupManager.import(jsonContent)
+                            importResult = res
                             isImporting = false
-                            importResult?.let { onImportComplete(it) }
                         }
                     },
                     enabled = !isImporting
@@ -153,4 +157,9 @@ fun <T> ImportSettingsDialog(
             }
         }
     )
+    // Notify on the composition thread after state is committed.
+    val completed = importResult
+    LaunchedEffect(completed) {
+        if (completed != null) onImportComplete(completed)
+    }
 }
