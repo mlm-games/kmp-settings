@@ -360,6 +360,17 @@ class SettingsProcessor(
                     logger.error("Dropdown '$propName' needs options= or optionsRes=", prop)
                 }
             }
+            if (isEnum && options.isNotEmpty()) {
+                val entryCount = (baseType.declaration as? KSClassDeclaration)
+                    ?.declarations?.filterIsInstance<KSClassDeclaration>()
+                    ?.count { it.classKind == ClassKind.ENUM_ENTRY } ?: -1
+                if (entryCount >= 0 && options.size != entryCount) {
+                    logger.error(
+                        "Dropdown options= on enum '$propName' must align by index with entries (${options.size} labels vs $entryCount entries); mismatched lists display the wrong label",
+                        prop
+                    )
+                }
+            }
         }
         val isButton = typeName == "Button"
         val hasAction = prop.hasAnnotation(ACTION_HANDLER_ANNOTATION)
@@ -379,8 +390,6 @@ class SettingsProcessor(
         // Validation applicability: @Range on numbers only, @Length/@Pattern on
         // String only, and range bounds ordered.
         val qname = baseType.declaration.qualifiedName?.asString()
-        val isNumeric = qname in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double") ||
-            propType.arguments.any { false }
         val isString = qname == "kotlin.String"
         if (prop.hasAnnotation(RANGE_ANNOTATION) && !(qname in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double"))) {
             logger.error("@Range applies to numeric types only (field '$propName' is $qname)", prop)
@@ -434,7 +443,6 @@ class SettingsProcessor(
         if (Modifier.PRIVATE in prop.modifiers || Modifier.PROTECTED in prop.modifiers) {
             logger.error("'$propName' must not be private/protected (generated schema cannot access it)", prop)
         }
-        if (isNumeric) { /* marker to keep branch explicit */ }
         validateCategory(prop, args)
     }
 

@@ -278,8 +278,7 @@ fun <T> AutoSettingsScreen(
                                     }
 
                                     Dropdown::class -> {
-                                        val options = field.getDropdownOptions()
-                                            ?: meta.resolvedOptions(stringProvider)
+                                        val options = meta.dropdownLabels(field, stringProvider)
                                         // Nullable selection: null stays null (subtitle
                                         // shows "(not set)") instead of coercing to index 0.
                                         val idx = field.toUiDropdownIndex(value)
@@ -395,7 +394,7 @@ fun <T> AutoSettingsScreen(
     val cf = currentField
     if (showDropdown && cf?.meta != null) {
         val meta = cf.meta!!
-        val options = cf.getDropdownOptions() ?: meta.resolvedOptions(stringProvider)
+        val options = meta.dropdownLabels(cf, stringProvider)
         // -1 = explicit-null selection for nullable dropdowns.
         val currentIdx = cf.toUiDropdownIndex(value) ?: -1
 

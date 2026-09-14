@@ -52,6 +52,9 @@ data class SettingMeta(
     val step: Float,
 
     // Dropdown config
+    // For enums these are display-label overrides aligned by entry index
+    // (raw labels default to humanized entry names); for Int/String fields
+    // they are the option labels proper.
     val options: List<String>,
     val optionsRes: Int,
 
@@ -80,6 +83,22 @@ data class SettingMeta(
 
     fun resolvedOptions(provider: StringResourceProvider): List<String> =
         if (optionsRes != 0) provider.getStringArray(optionsRes) else options
+
+    /**
+     * Display labels for a dropdown row/dialog.
+     *
+     * Precedence: explicit `options`/`optionsRes` overrides (aligned by index,
+     * so enum labels can be renamed/localized without touching storage) win;
+     * otherwise the field's own labels (enums: humanized entry names).
+     */
+    fun dropdownLabels(
+        field: SettingField<*, *>,
+        provider: StringResourceProvider,
+    ): List<String> {
+        val overrides = resolvedOptions(provider)
+        if (overrides.isNotEmpty()) return overrides
+        return field.getDropdownOptions().orEmpty()
+    }
 
     fun isVisibleOnPlatform(currentPlatform: SettingPlatform): Boolean {
         if (platforms.contains(SettingPlatform.ALL)) return true

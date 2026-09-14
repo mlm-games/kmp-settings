@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.mlmgames.settings.core.SettingField
 import io.github.mlmgames.settings.core.SettingMeta
+import io.github.mlmgames.settings.core.formatEnumDisplayName
 
 class EnumField<T, E : Enum<E>>(
     override val name: String,
@@ -52,7 +53,7 @@ class EnumField<T, E : Enum<E>>(
     }
 
     override fun getDropdownOptions(): List<String> {
-        return enumValues.map { it.name }
+        return enumValues.map { formatEnumDisplayName(it.name) }
     }
 
     override fun encodeValue(value: E): String = "s:${value.name}"
@@ -99,7 +100,7 @@ class NullableEnumField<T, E : Enum<E>>(
 
     override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index)
 
-    override fun getDropdownOptions(): List<String> = enumValues.map { it.name }
+    override fun getDropdownOptions(): List<String> = enumValues.map { formatEnumDisplayName(it.name) }
 
     override fun encodeValue(value: E?): String {
         if (value == null) return "s:"
@@ -143,7 +144,7 @@ class EnumOrdinalField<T, E : Enum<E>>(
 
     override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index)
 
-    override fun getDropdownOptions(): List<String> = enumValues.map { it.name }
+    override fun getDropdownOptions(): List<String> = enumValues.map { formatEnumDisplayName(it.name) }
 
     override fun encodeValue(value: E): String = "i:${value.ordinal}"
     override fun decodeValue(encoded: String): E? {
