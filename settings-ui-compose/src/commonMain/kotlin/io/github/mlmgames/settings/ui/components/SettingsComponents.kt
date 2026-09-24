@@ -183,6 +183,85 @@ fun SettingsToggle(
 }
 
 @Composable
+fun SettingsNullableToggle(
+    title: String,
+    checked: Boolean?,
+    description: String? = null,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit,
+    onClear: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 64.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .toggleable(
+                        value = checked == true,
+                        enabled = enabled,
+                        role = Role.Switch,
+                        onValueChange = onCheckedChange
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        }
+                    )
+                    if (!description.isNullOrBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (enabled) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            },
+                        )
+                    }
+                    if (checked == null) {
+                        Text(
+                            text = "Not set",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Switch(checked = checked == true, onCheckedChange = null, enabled = enabled)
+            }
+            TextButton(
+                onClick = onClear,
+                enabled = enabled,
+            ) {
+                Text("Clear")
+            }
+        }
+    }
+}
+
+@Composable
 fun SettingsAction(
     title: String,
     description: String? = null,

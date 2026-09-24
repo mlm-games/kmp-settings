@@ -13,6 +13,7 @@ import io.github.mlmgames.settings.core.annotations.SettingAction
 import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.annotations.ValidationResult
 import io.github.mlmgames.settings.core.platform.currentPlatform
+import io.github.mlmgames.settings.core.resources.StringResourceProvider
 import io.github.mlmgames.settings.core.types.Button
 import io.github.mlmgames.settings.core.types.Dropdown
 import io.github.mlmgames.settings.core.types.Slider
@@ -21,6 +22,8 @@ import io.github.mlmgames.settings.core.types.TimePickerType
 import io.github.mlmgames.settings.core.types.Toggle
 import io.github.mlmgames.settings.ui.components.*
 import io.github.mlmgames.settings.ui.dialogs.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.reflect.KClass
@@ -35,7 +38,7 @@ data class CustomTypeHandler<T>(
         meta: SettingMeta,
         value: T,
         enabled: Boolean,
-        onSet: (name: String, value: Any) -> Unit,
+        onSet: (name: String, value: Any?) -> Unit,
     ) -> Unit
 )
 
@@ -60,13 +63,13 @@ data class CategoryConfig(
  * @param categoryConfigs Custom category display configuration
  * @param customTypeHandlers Custom type renderers
  * @param snackbarHostState External snackbar host state
- * @param actionIcons Map of action classes to their icons
+ * @param actionTrailingContent Map of action classes to their trailing content
  */
 @Composable
 fun <T> AutoSettingsScreen(
     schema: SettingsSchema<T>,
     value: T,
-    onSet: (name: String, value: Any) -> Unit,
+    onSet: (name: String, value: Any?) -> Unit,
     onAction: suspend (KClass<out SettingAction>) -> Unit = {},
     modifier: Modifier = Modifier,
     platform: SettingPlatform = currentPlatform,
@@ -77,50 +80,45 @@ fun <T> AutoSettingsScreen(
 ) {
     val stringProvider = LocalStringResourceProvider.current
     val scope = rememberCoroutineScope()
+    val currentSchema by rememberUpdatedState(schema)
+    val currentValue by rememberUpdatedState(value)
+    val currentOnSet by rememberUpdatedState(onSet)
+    val currentOnAction by rememberUpdatedState(onAction)
+    val currentStringProvider by rememberUpdatedState(stringProvider)
 
-    // Snackbar
     val internalSnackbarHostState = remember { SnackbarHostState() }
     val effectiveSnackbarHostState = snackbarHostState ?: internalSnackbarHostState
     val renderInternalSnackbarHost = snackbarHostState == null
+    val currentSnackbarHostState by rememberUpdatedState(effectiveSnackbarHostState)
+    var snackbarJob by remember { mutableStateOf<Job?>(null) }
 
-    fun showSnackbar(message: String) {
-        scope.launch {
-            effectiveSnackbarHostState.currentSnackbarData?.dismiss()
-            effectiveSnackbarHostState.showSnackbar(message)
+    val showSnackbar: (String) -> Unit = { message ->
+        snackbarJob?.cancel()
+        snackbarJob = scope.launch {
+            currentSnackbarHostState.currentSnackbarData?.dismiss()
+            currentSnackbarHostState.showSnackbar(message)
         }
     }
 
-    // Dialog states
-    var showDropdown by remember { mutableStateOf(false) }
-    var showSlider by remember { mutableStateOf(false) }
-    var showTextInput by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
+    var dialogKind by remember { mutableStateOf<DialogKind?>(null) }
     var currentField by remember { mutableStateOf<SettingField<T, *>?>(null) }
+    var pendingConfirmation by remember { mutableStateOf<PendingConfirmation<T>?>(null) }
+    val inFlightActions = remember { mutableStateMapOf<KClass<out SettingAction>, Boolean>() }
+    val toggleDrafts = remember { mutableStateMapOf<String, ToggleDraft>() }
 
-    // Single-dialog policy lambdas, declared before the list so row onClick
-    // handlers can reference them. Opening one dialog closes any other, and
-    // every dismiss path nulls the field so stale state never leaks.
-    val openDialog: (SettingField<T, *>, String) -> Unit = { field, which ->
-        currentField = field
-        showDropdown = which == "dropdown"
-        showSlider = which == "slider"
-        showTextInput = which == "text"
-        showTimePicker = which == "time"
+    val openDialog: (SettingField<T, *>, DialogKind) -> Unit = { field, kind ->
+        if (field.meta != null && pendingConfirmation == null) {
+            currentField = field
+            dialogKind = kind
+        }
     }
     val closeDialogs: () -> Unit = {
-        showDropdown = false
-        showSlider = false
-        showTextInput = false
-        showTimePicker = false
+        dialogKind = null
         currentField = null
     }
 
-    // Confirmation dialog state
-    var pendingConfirmation by remember { mutableStateOf<PendingConfirmation<T>?>(null) }
-
     val grouped = remember(schema, platform) { schema.groupedByCategory(platform) }
     val orderedCategories = remember(schema, platform) { schema.orderedCategories(platform) }
-
     val categoryConfigMap = remember(categoryConfigs) {
         categoryConfigs.associateBy { it.categoryClass }
     }
@@ -128,47 +126,99 @@ fun <T> AutoSettingsScreen(
         customTypeHandlers.associateBy { it.typeClass }
     }
 
-    // Handle setting change with validation and confirmation
-    // Captures the latest value/schema via rememberUpdatedState-equivalent:
-    // handleSetValue reads `value`/`schema` from composition locals at call
-    // time, so dialogs always validate against current state.
-    val handleSetValue: (SettingField<T, *>, Any) -> Unit = handleSetValue@{ field, newValue ->
-        val meta = field.meta
-
-        // Validate if rules exist
-        if (meta?.validation != null) {
-            when (val result = meta.validate(newValue, stringProvider)) {
-                is ValidationResult.Valid -> { /* proceed */ }
-                is ValidationResult.Invalid -> {
-                    showSnackbar(result.message)
-                    return@handleSetValue
-                }
-            }
+    val isFieldEnabled: (SettingField<T, *>) -> Boolean = { field ->
+        try {
+            currentSchema.isEnabled(currentValue, field)
+        } catch (_: Exception) {
+            false
         }
-
-        // Re-check dependency at commit time: a dialog may have been opened
-        // while enabled, then the dependency toggled off underneath.
-        if (!schema.isEnabled(value, field)) {
-            showSnackbar("Setting is disabled")
-            return@handleSetValue
+    }
+    val isFieldVisible: (SettingField<T, *>) -> Boolean = { field ->
+        field.meta?.isVisibleOnPlatform(platform) == true
+    }
+    val readFieldValue: (SettingField<T, *>) -> Any? = { field ->
+        try {
+            field.get(currentValue)
+        } catch (_: RuntimeException) {
+            null
         }
+    }
+    val canWriteNull: (SettingField<T, *>) -> Boolean = { field ->
+        field.supportsExplicitNull
+    }
 
-        // Check for confirmation requirement
-        if (meta?.confirmation != null) {
-            // Queue: a second confirmation replaces the first only after the
-            // first is resolved; pendingConfirmation holds at most one.
-            pendingConfirmation = PendingConfirmation(
-                field = field,
-                value = newValue,
-                isAction = false,
-                config = meta.confirmation!!
-            )
-        } else {
-            onSet(field.name, newValue)
+    val commitSet: (SettingField<T, *>, Any?) -> Unit = { field, newValue ->
+        try {
+            currentOnSet(field.name, newValue)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (field.meta?.type == Toggle::class) toggleDrafts.remove(field.name)
+            showSnackbar(error.message ?: "Setting update failed")
         }
     }
 
-    // Handle button actions
+    val handleSetValue: (SettingField<T, *>, Any?) -> Unit = handleSetValue@{ requestedField, newValue ->
+        val field = currentSchema.fieldByName(requestedField.name) ?: return@handleSetValue
+        val meta = field.meta ?: return@handleSetValue
+        if (!isFieldVisible(field) || !isFieldEnabled(field)) {
+            showSnackbar("Setting is disabled")
+            return@handleSetValue
+        }
+        if (newValue == null && !canWriteNull(field)) {
+            showSnackbar("This setting cannot be cleared")
+            return@handleSetValue
+        }
+
+        val validation = safeValidate(meta, newValue, currentStringProvider)
+        if (validation is ValidationResult.Invalid) {
+            showSnackbar(validation.message)
+            return@handleSetValue
+        }
+
+        val oldValue = readFieldValue(field)
+        if (meta.type != Toggle::class && newValue != null && oldValue == newValue) {
+            return@handleSetValue
+        }
+
+        val confirmation = meta.confirmation
+        if (confirmation != null) {
+            if (pendingConfirmation == null) {
+                pendingConfirmation = PendingConfirmation(
+                    schema = currentSchema,
+                    field = field,
+                    value = newValue,
+                    actionClass = null,
+                    config = confirmation,
+                )
+            }
+        } else {
+            commitSet(field, newValue)
+        }
+    }
+
+    val launchAction: (SettingField<T, *>, KClass<out SettingAction>) -> Unit = launchAction@{ field, actionClass ->
+        if (inFlightActions.containsKey(actionClass)) return@launchAction
+        val resolved = currentSchema.fieldByName(field.name)
+        if (resolved == null || !isFieldVisible(resolved) || !isFieldEnabled(resolved)) {
+            showSnackbar("Setting is disabled")
+            return@launchAction
+        }
+
+        inFlightActions[actionClass] = true
+        scope.launch {
+            try {
+                currentOnAction(actionClass)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                showSnackbar(error.message ?: "Action failed")
+            } finally {
+                inFlightActions.remove(actionClass)
+            }
+        }
+    }
+
     val handleAction: (SettingField<T, *>) -> Unit = handleAction@{ field ->
         val meta = field.meta ?: run {
             showSnackbar("Action unavailable")
@@ -178,31 +228,110 @@ fun <T> AutoSettingsScreen(
             showSnackbar("Action unavailable")
             return@handleAction
         }
+        if (!isFieldVisible(field) || !isFieldEnabled(field)) {
+            showSnackbar("Setting is disabled")
+            return@handleAction
+        }
+        if (inFlightActions.containsKey(actionClass)) return@handleAction
 
         val action = ActionRegistry.getAction(actionClass)
-
-        if (action?.requiresConfirmation == true) {
-            pendingConfirmation = PendingConfirmation(
-                field = field,
-                value = Unit,
-                isAction = true,
-                config = ConfirmationConfig(
-                    title = action.confirmationTitle,
-                    message = action.confirmationMessage,
-                    titleRes = 0,
-                    messageRes = 0,
-                    confirmText = "Confirm",
-                    confirmTextRes = 0,
-                    cancelText = "Cancel",
-                    cancelTextRes = 0,
-                    isDangerous = action.isDangerous
-                )
+        val confirmation = meta.confirmation ?: action?.takeIf { it.requiresConfirmation }?.let {
+            ConfirmationConfig(
+                title = it.confirmationTitle,
+                message = it.confirmationMessage,
+                titleRes = 0,
+                messageRes = 0,
+                confirmText = "Confirm",
+                confirmTextRes = 0,
+                cancelText = "Cancel",
+                cancelTextRes = 0,
+                isDangerous = it.isDangerous,
+            )
+        } ?: if (action == null) {
+            ConfirmationConfig(
+                title = "Run action",
+                message = "Run ${safeResolvedTitle(meta, currentStringProvider)}?",
+                titleRes = 0,
+                messageRes = 0,
+                confirmText = "Run",
+                confirmTextRes = 0,
+                cancelText = "Cancel",
+                cancelTextRes = 0,
+                isDangerous = true,
             )
         } else {
-            scope.launch {
-                runCatching { onAction(actionClass) }
-                    .onFailure { showSnackbar(it.message ?: "Action failed") }
+            null
+        }
+        if (confirmation != null) {
+            if (pendingConfirmation == null) {
+                pendingConfirmation = PendingConfirmation(
+                    schema = currentSchema,
+                    field = field,
+                    value = null,
+                    actionClass = actionClass,
+                    config = confirmation,
+                )
             }
+        } else {
+            launchAction(field, actionClass)
+        }
+    }
+
+    val visibleFields = remember(grouped, platform) {
+        grouped.values.flatten()
+    }
+    LaunchedEffect(value, schema, platform) {
+        visibleFields.forEach { field ->
+            val draft = toggleDrafts[field.name] ?: return@forEach
+            if (!isFieldEnabled(field)) {
+                toggleDrafts.remove(field.name)
+                return@forEach
+            }
+            val actual = try {
+                field.toUiToggleValue(value)
+            } catch (_: RuntimeException) {
+                null
+            }
+            if (actual is Boolean && actual == draft.requested && actual != draft.baseline) {
+                toggleDrafts.remove(field.name)
+            }
+        }
+        val visibleNames = visibleFields.mapTo(mutableSetOf()) { it.name }
+        toggleDrafts.keys.filter { it !in visibleNames }.forEach(toggleDrafts::remove)
+    }
+
+    LaunchedEffect(dialogKind, currentField, value, platform, schema) {
+        val field = currentField ?: return@LaunchedEffect
+        val resolved = currentSchema.fieldByName(field.name) ?: run {
+            closeDialogs()
+            return@LaunchedEffect
+        }
+        val compatible = when (dialogKind) {
+            null -> true
+            DialogKind.DROPDOWN -> resolved.meta?.let { meta ->
+                supportsDropdown(resolved, meta, currentValue)
+            } == true
+            DialogKind.SLIDER -> {
+                val meta = resolved.meta
+                meta != null && supportsSlider(resolved, meta, currentValue)
+            }
+            DialogKind.TEXT -> {
+                val value = readFieldValue(resolved)
+                value is String || value == null && canWriteNull(resolved)
+            }
+            DialogKind.TIME -> {
+                val value = readFieldValue(resolved)
+                value is Int || value == null && canWriteNull(resolved)
+            }
+        }
+        if (
+            dialogKind == null ||
+            field !== resolved ||
+            !isFieldVisible(resolved) ||
+            !isFieldEnabled(resolved) ||
+            !compatible
+        ) {
+            closeDialogs()
         }
     }
 
@@ -221,17 +350,18 @@ fun <T> AutoSettingsScreen(
                 val fields = grouped[categoryClass].orEmpty()
                 if (fields.isEmpty()) return@forEach
 
+                val categoryKey = categoryClass.qualifiedName ?: categoryClass.toString()
                 val categoryConfig = categoryConfigMap[categoryClass]
+                val generatedTitleRes = currentSchema.categoryTitleResources[categoryClass] ?: 0
                 val categoryTitle = when {
                     categoryConfig?.titleRes != 0 && categoryConfig != null ->
-                        stringProvider.getString(categoryConfig.titleRes)
-                    categoryConfig?.title?.isNotBlank() == true ->
-                        categoryConfig.title
-                    else ->
-                        categoryClass.simpleName ?: "Unknown"
+                        safeResourceString(currentStringProvider, categoryConfig.titleRes, categoryClass.simpleName ?: "Category")
+                    categoryConfig?.title?.isNotBlank() == true -> categoryConfig.title
+                    generatedTitleRes != 0 -> safeResourceString(currentStringProvider, generatedTitleRes, categoryClass.simpleName ?: "Category")
+                    else -> categoryClass.simpleName ?: "Unknown"
                 }
 
-                item(key = "header_${categoryClass.qualifiedName}") {
+                item(key = "header_$categoryKey") {
                     Text(
                         text = categoryTitle,
                         style = MaterialTheme.typography.titleMedium,
@@ -239,138 +369,202 @@ fun <T> AutoSettingsScreen(
                     )
                 }
 
-                item(key = "section_${categoryClass.qualifiedName}") {
+                item(key = "section_$categoryKey") {
                     SettingsSection(title = "") {
                         Column {
                             fields.forEach { field ->
-                                val meta = field.meta ?: return@forEach
-                                val enabled = schema.isEnabled(value, field)
-
-                                val title = meta.resolvedTitle(stringProvider)
-                                val description = meta.resolvedDescription(stringProvider)
-                                    .takeIf { it.isNotBlank() }
-
-                                val customHandler = customHandlerMap[meta.type]
-                                if (customHandler != null) {
-                                    // Route through handleSetValue so custom types
-                                    // keep validation + confirmation guarantees.
-                                    @Suppress("UNCHECKED_CAST")
-                                    customHandler.render(field, meta, value, enabled) { name, v ->
-                                        val target = schema.fieldByName(name) ?: field
-                                        handleSetValue(target, v)
-                                    }
-                                    return@forEach
-                                }
-
-                                when (meta.type) {
-                                    Toggle::class -> {
-                                        @Suppress("UNCHECKED_CAST")
-                                        val boolField = field as? SettingField<T, Boolean>
-                                        if (boolField != null) {
-                                            SettingsToggle(
-                                                title = title,
-                                                description = description,
-                                                checked = boolField.get(value),
-                                                enabled = enabled,
-                                                onCheckedChange = { handleSetValue(field, it) }
-                                            )
-                                        }
-                                    }
-
-                                    Dropdown::class -> {
-                                        val options = meta.dropdownLabels(field, stringProvider)
-                                        // Nullable selection: null stays null (subtitle
-                                        // shows "(not set)") instead of coercing to index 0.
-                                        val idx = field.toUiDropdownIndex(value)
-                                        SettingsItem(
-                                            title = title,
-                                            subtitle = if (idx == null) "(not set)" else options.getOrNull(idx) ?: "Unknown",
-                                            description = description,
-                                            enabled = enabled,
-                                            onClick = { openDialog(field, "dropdown") }
-                                        )
-                                    }
-
-                                    Slider::class -> {
-                                        val sliderVal = field.toUiSliderValue(value)
-                                        val subtitle = sliderVal?.let {
-                                            formatSliderValue(it, meta.step)
-                                        } ?: ""
-
-                                        SettingsItem(
-                                            title = title,
-                                            subtitle = subtitle,
-                                            description = description,
-                                            enabled = enabled,
-                                            onClick = { openDialog(field, "slider") }
-                                        )
-                                    }
-
-                                    Button::class -> {
-                                        SettingsAction(
-                                            title = title,
-                                            description = description,
-                                            enabled = enabled,
-                                            onClick = { handleAction(field) },
-                                            trailingContent = meta.actionClass?.let { actionTrailingContent[it] },
-                                        )
-                                    }
-
-                                    TextInput::class -> {
-                                        @Suppress("UNCHECKED_CAST")
-                                        val stringField = field as? SettingField<T, String>
-                                        if (stringField != null) {
-                                            SettingsItem(
-                                                title = title,
-                                                subtitle = stringField.get(value).ifBlank { "(empty)" },
-                                                description = description,
-                                                enabled = enabled,
-                                                onClick = { openDialog(field, "text") }
-                                            )
+                                key(field.name) {
+                                    val meta = field.meta
+                                    if (meta != null) {
+                                        val enabled = isFieldEnabled(field)
+                                        val title = safeResolvedTitle(meta, currentStringProvider)
+                                        val description = safeResolvedDescription(meta, currentStringProvider)
+                                            .takeIf { it.isNotBlank() }
+                                        val customHandler = customHandlerMap[meta.type]
+                                        if (customHandler != null) {
+                                            customHandler.render(field, meta, currentValue, enabled) { name, newValue ->
+                                                val target = currentSchema.fieldByName(name)
+                                                if (target != null) {
+                                                    handleSetValue(target, newValue)
+                                                }
+                                            }
                                         } else {
-                                            SettingsItem(
-                                                title = title,
-                                                subtitle = "Unsupported type for text input",
-                                                description = description,
-                                                enabled = false,
-                                                onClick = {}
-                                            )
-                                        }
-                                    }
+                                            when (meta.type) {
+                                                Toggle::class -> {
+                                                    val fieldValue = try {
+                                                        field.toUiToggleValue(currentValue)
+                                                    } catch (_: RuntimeException) {
+                                                        null
+                                                    }
+                                                    val nullable = canWriteNull(field)
+                                                    if (fieldValue is Boolean || (fieldValue == null && nullable)) {
+                                                        val checked = toggleDrafts[field.name]?.requested
+                                                            ?: fieldValue
+                                                        if (nullable) {
+                                                            SettingsNullableToggle(
+                                                                title = title,
+                                                                checked = checked,
+                                                                description = description,
+                                                                enabled = enabled,
+                                                                onCheckedChange = {
+                                                                    val baseline = fieldValue == true
+                                                                    val next = !(toggleDrafts[field.name]?.requested ?: baseline)
+                                                                    val converted = try {
+                                                                        field.fromUiToggleValue(next)
+                                                                    } catch (_: RuntimeException) {
+                                                                        null
+                                                                    }
+                                                                    if (converted is Boolean) {
+                                                                        toggleDrafts[field.name] = ToggleDraft(converted, baseline)
+                                                                        handleSetValue(field, converted)
+                                                                    }
+                                                                },
+                                                                onClear = {
+                                                                    toggleDrafts.remove(field.name)
+                                                                    handleSetValue(field, null)
+                                                                },
+                                                            )
+                                                        } else {
+                                                            SettingsToggle(
+                                                                title = title,
+                                                                description = description,
+                                                                checked = checked == true,
+                                                                enabled = enabled,
+                                                                onCheckedChange = {
+                                                                    val baseline = fieldValue == true
+                                                                    val next = !(toggleDrafts[field.name]?.requested ?: baseline)
+                                                                    val converted = try {
+                                                                        field.fromUiToggleValue(next)
+                                                                    } catch (_: RuntimeException) {
+                                                                        null
+                                                                    }
+                                                                    if (converted is Boolean) {
+                                                                        toggleDrafts[field.name] = ToggleDraft(converted, baseline)
+                                                                        handleSetValue(field, converted)
+                                                                    }
+                                                                },
+                                                            )
+                                                        }
+                                                    } else {
+                                                        UnsupportedSettingRow(title, description)
+                                                    }
+                                                }
 
-                                    TimePickerType::class -> {
-                                        @Suppress("UNCHECKED_CAST")
-                                        val intField = field as? SettingField<T, Int>
-                                        if (intField != null) {
-                                            val minutes = intField.get(value)
-                                            SettingsItem(
-                                                title = title,
-                                                subtitle = formatMinutesOfDay(minutes),
-                                                description = description,
-                                                enabled = enabled,
-                                                onClick = { openDialog(field, "time") }
-                                            )
-                                        } else {
-                                            SettingsItem(
-                                                title = title,
-                                                subtitle = "Unsupported type for time picker",
-                                                description = description,
-                                                enabled = false,
-                                                onClick = {}
-                                            )
-                                        }
-                                    }
+                                                Dropdown::class -> {
+                                                    val options = resolveDropdownLabels(
+                                                        field,
+                                                        meta,
+                                                        currentStringProvider,
+                                                    )
+                                                    val index = try {
+                                                        field.toUiDropdownIndex(currentValue)
+                                                    } catch (_: RuntimeException) {
+                                                        null
+                                                    }
+                                                    val nullable = canWriteNull(field)
+                                                    if (supportsDropdown(field, meta, currentValue)) {
+                                                        val subtitle = if (nullable && index == null) {
+                                                            "(not set)"
+                                                        } else {
+                                                            options.getOrNull(index ?: -1) ?: "Unknown"
+                                                        }
+                                                        SettingsItem(
+                                                            title = title,
+                                                            subtitle = subtitle,
+                                                            description = description,
+                                                            enabled = enabled && (options.isNotEmpty() || nullable),
+                                                            onClick = {
+                                                                openDialog(field, DialogKind.DROPDOWN)
+                                                            },
+                                                        )
+                                                    } else {
+                                                        UnsupportedSettingRow(title, description)
+                                                    }
+                                                }
 
-                                    else -> {
-                                        // Unknown/custom type without a handler: visible
-                                        // fallback instead of a silent blank row.
-                                        SettingsItem(
-                                            title = title,
-                                            subtitle = "Unsupported setting type",
-                                            description = description,
-                                            enabled = false,
-                                            onClick = {}
-                                        )
+                                                Slider::class -> {
+                                                    val sliderValue = try {
+                                                        field.toUiSliderValue(currentValue)?.takeIf { it.isFinite() }
+                                                    } catch (_: RuntimeException) {
+                                                        null
+                                                    }
+                                                    val nullable = canWriteNull(field)
+                                                    if (supportsSlider(field, meta, currentValue) &&
+                                                        (sliderValue != null || nullable)
+                                                    ) {
+                                                        SettingsItem(
+                                                            title = title,
+                                                            subtitle = sliderValue?.let {
+                                                                formatSliderValue(it, meta.step)
+                                                            } ?: "(not set)",
+                                                            description = description,
+                                                            enabled = enabled,
+                                                            onClick = {
+                                                                openDialog(field, DialogKind.SLIDER)
+                                                            },
+                                                        )
+                                                    } else {
+                                                        UnsupportedSettingRow(title, description)
+                                                    }
+                                                }
+
+                                                Button::class -> {
+                                                    val actionClass = meta.actionClass
+                                                    val actionPending = actionClass != null &&
+                                                        pendingConfirmation?.actionClass == actionClass
+                                                    SettingsAction(
+                                                        title = title,
+                                                        description = description,
+                                                        enabled = enabled &&
+                                                            actionClass != null &&
+                                                            !inFlightActions.containsKey(actionClass) &&
+                                                            !actionPending,
+                                                        onClick = { handleAction(field) },
+                                                        trailingContent = actionClass?.let {
+                                                            actionTrailingContent[it]
+                                                        },
+                                                    )
+                                                }
+
+                                                TextInput::class -> {
+                                                    val fieldValue = readFieldValue(field)
+                                                    if (fieldValue is String || (fieldValue == null && canWriteNull(field))) {
+                                                        SettingsItem(
+                                                            title = title,
+                                                            subtitle = fieldValue?.ifBlank { "(empty)" }
+                                                                ?: "(not set)",
+                                                            description = description,
+                                                            enabled = enabled,
+                                                            onClick = {
+                                                                openDialog(field, DialogKind.TEXT)
+                                                            },
+                                                        )
+                                                    } else {
+                                                        UnsupportedSettingRow(title, description)
+                                                    }
+                                                }
+
+                                                TimePickerType::class -> {
+                                                    val fieldValue = readFieldValue(field)
+                                                    if (fieldValue is Int || (fieldValue == null && canWriteNull(field))) {
+                                                        SettingsItem(
+                                                            title = title,
+                                                            subtitle = fieldValue?.let(::formatMinutesOfDay)
+                                                                ?: "(not set)",
+                                                            description = description,
+                                                            enabled = enabled,
+                                                            onClick = {
+                                                                openDialog(field, DialogKind.TIME)
+                                                            },
+                                                        )
+                                                    } else {
+                                                        UnsupportedSettingRow(title, description)
+                                                    }
+                                                }
+
+                                                else -> UnsupportedSettingRow(title, description)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -390,153 +584,370 @@ fun <T> AutoSettingsScreen(
         }
     }
 
-    // Dialogs (single `currentField` policy; openDialog/closeDialogs above).
-    val cf = currentField
-    if (showDropdown && cf?.meta != null) {
-        val meta = cf.meta!!
-        val options = meta.dropdownLabels(cf, stringProvider)
-        // -1 = explicit-null selection for nullable dropdowns.
-        val currentIdx = cf.toUiDropdownIndex(value) ?: -1
+    val field = currentField?.let { requested ->
+        currentSchema.fieldByName(requested.name) ?: requested
+    }
 
+    if (dialogKind == DialogKind.DROPDOWN && field?.meta != null) {
+        val meta = field.meta!!
+        val options = resolveDropdownLabels(field, meta, currentStringProvider)
+        val nullable = canWriteNull(field)
+        val selectedIndex = try {
+            field.toUiDropdownIndex(currentValue)
+        } catch (_: RuntimeException) {
+            null
+        }
         DropdownSettingDialog(
-            title = meta.resolvedTitle(stringProvider),
+            title = safeResolvedTitle(meta, currentStringProvider),
             options = options,
-            selectedIndex = currentIdx,
-            onDismiss = { closeDialogs() },
-            onOptionSelected = { idx ->
-                val newValue = cf.fromUiDropdownIndex(idx)
-                if (newValue != null) {
-                    handleSetValue(cf, newValue)
+            selectedIndex = selectedIndex ?: NULL_DROPDOWN_INDEX,
+            allowNull = nullable,
+            onDismiss = closeDialogs,
+            onOptionSelected = { uiIndex ->
+                val fieldIndex = when {
+                    nullable && uiIndex == 0 -> NULL_DROPDOWN_INDEX
+                    nullable -> uiIndex - 1
+                    else -> uiIndex
+                }
+                if (fieldIndex == NULL_DROPDOWN_INDEX) {
+                    handleSetValue(field, null)
                 } else {
-                    showSnackbar("Invalid selection")
+                    val newValue = try {
+                        field.fromUiDropdownIndex(fieldIndex)
+                    } catch (_: RuntimeException) {
+                        null
+                    }
+                    if (newValue == null) {
+                        showSnackbar("Invalid selection")
+                    } else {
+                        handleSetValue(field, newValue)
+                    }
                 }
                 closeDialogs()
-            }
+            },
         )
     }
 
-    if (showSlider && cf?.meta != null) {
-        val meta = cf.meta!!
-        val currentVal = cf.toUiSliderValue(value) ?: 0f
-
-        SliderSettingDialog(
-            title = meta.resolvedTitle(stringProvider),
-            currentValue = currentVal,
-            min = meta.min,
-            max = meta.max,
-            step = meta.step,
-            onDismiss = { closeDialogs() },
-            onValueSelected = { v ->
-                val newValue = cf.fromUiSliderValue(v)
-                if (newValue != null) {
-                    handleSetValue(cf, newValue)
+    if (dialogKind == DialogKind.SLIDER && field?.meta != null) {
+        val meta = field.meta!!
+        val nullable = canWriteNull(field)
+        val currentValueForSlider = try {
+            field.toUiSliderValue(currentValue)?.takeIf { it.isFinite() }
+        } catch (_: RuntimeException) {
+            null
+        }
+        if (currentValueForSlider != null || nullable) {
+            SliderSettingDialog(
+                title = safeResolvedTitle(meta, currentStringProvider),
+                currentValue = currentValueForSlider,
+                min = meta.min,
+                max = meta.max,
+                step = meta.step,
+                allowNull = nullable,
+                onDismiss = closeDialogs,
+                onValueSelected = { sliderValue ->
+                    val newValue = try {
+                        field.fromUiSliderValue(sliderValue)
+                    } catch (_: RuntimeException) {
+                        null
+                    }
+                    if (newValue == null) {
+                        showSnackbar("Invalid value")
+                    } else {
+                        handleSetValue(field, newValue)
+                    }
+                    closeDialogs()
+                },
+                onClear = if (nullable) {
+                    {
+                        handleSetValue(field, null)
+                        closeDialogs()
+                    }
                 } else {
-                    showSnackbar("Invalid value")
-                }
-                closeDialogs()
-            }
-        )
+                    null
+                },
+            )
+        }
     }
 
-    if (showTextInput && cf?.meta != null) {
-        val meta = cf.meta!!
-        @Suppress("UNCHECKED_CAST")
-        val stringField = cf as? SettingField<T, String>
-        if (stringField != null) {
+    if (dialogKind == DialogKind.TEXT && field?.meta != null) {
+        val meta = field.meta!!
+        val fieldValue = readFieldValue(field)
+        if (fieldValue is String) {
             InputDialog(
-                title = meta.resolvedTitle(stringProvider),
-                label = meta.resolvedTitle(stringProvider),
-                value = stringField.get(value),
-                onDismiss = { closeDialogs() },
+                title = safeResolvedTitle(meta, currentStringProvider),
+                label = safeResolvedTitle(meta, currentStringProvider),
+                value = fieldValue,
+                onDismiss = closeDialogs,
                 onConfirm = { newValue ->
-                    handleSetValue(cf, newValue)
+                    handleSetValue(field, newValue)
                     closeDialogs()
                 },
                 validator = { input ->
-                    if (meta.validation != null) {
-                        meta.validate(input, stringProvider) is ValidationResult.Valid
-                    } else true
-                }
+                    meta.validation?.let {
+                        safeValidate(meta, input, currentStringProvider) is ValidationResult.Valid
+                    } ?: true
+                },
             )
-        } else {
-            closeDialogs()
-        }
-    }
-
-    if (showTimePicker && cf?.meta != null) {
-        val meta = cf.meta!!
-        @Suppress("UNCHECKED_CAST")
-        val intField = cf as? SettingField<T, Int>
-        if (intField != null) {
-            TimePickerSettingDialog(
-                title = meta.resolvedTitle(stringProvider),
-                currentMinutes = intField.get(value),
-                onDismiss = { closeDialogs() },
-                onTimeSelected = { minutes ->
-                    handleSetValue(cf, minutes)
+        } else if (fieldValue == null && canWriteNull(field)) {
+            NullableInputDialog(
+                title = safeResolvedTitle(meta, currentStringProvider),
+                label = safeResolvedTitle(meta, currentStringProvider),
+                value = null,
+                onDismiss = closeDialogs,
+                onConfirm = { newValue ->
+                    handleSetValue(field, newValue)
                     closeDialogs()
-                }
+                },
+                onClear = {
+                    handleSetValue(field, null)
+                    closeDialogs()
+                },
+                validator = { input ->
+                    meta.validation?.let {
+                        safeValidate(meta, input, currentStringProvider) is ValidationResult.Valid
+                    } ?: true
+                },
             )
-        } else {
-            closeDialogs()
         }
     }
 
-    // Confirmation dialog: explicit isAction flag replaces the fragile
-    // `value == Unit` sentinel, and the value is re-validated at confirm time
-    // (validate-then-confirm window) plus re-checked against dependencies.
+    if (dialogKind == DialogKind.TIME && field?.meta != null) {
+        val meta = field.meta!!
+        val fieldValue = readFieldValue(field)
+        if (fieldValue is Int || (fieldValue == null && canWriteNull(field))) {
+            val currentMinutes = if (fieldValue is Int) fieldValue else null
+            TimePickerSettingDialog(
+                title = safeResolvedTitle(meta, currentStringProvider),
+                currentMinutes = currentMinutes,
+                onDismiss = closeDialogs,
+                onTimeSelected = { minutes ->
+                    handleSetValue(field, minutes)
+                    closeDialogs()
+                },
+                onClear = if (canWriteNull(field)) {
+                    {
+                        handleSetValue(field, null)
+                        closeDialogs()
+                    }
+                } else {
+                    null
+                },
+            )
+        }
+    }
+
     pendingConfirmation?.let { pending ->
         SettingConfirmationDialog(
             config = pending.config,
             onConfirm = {
-                if (pending.isAction) {
-                    val actionClass = pending.field.meta?.actionClass
-                    if (actionClass != null) {
-                        scope.launch {
-                            runCatching { onAction(actionClass) }
-                                .onFailure { showSnackbar(it.message ?: "Action failed") }
-                        }
-                    }
-                } else {
-                    val meta = pending.field.meta
-                    if (meta?.validation != null) {
-                        when (val result = meta.validate(pending.value, stringProvider)) {
-                            is ValidationResult.Valid -> { /* proceed */ }
-                            is ValidationResult.Invalid -> {
-                                showSnackbar(result.message)
-                                pendingConfirmation = null
-                                return@SettingConfirmationDialog
-                            }
-                        }
-                    }
-                    if (!schema.isEnabled(value, pending.field)) {
-                        showSnackbar("Setting is disabled")
+                if (pendingConfirmation != pending) return@SettingConfirmationDialog
+                if (pending.schema !== currentSchema) {
+                    pendingConfirmation = null
+                    showSnackbar("Settings schema changed")
+                    return@SettingConfirmationDialog
+                }
+                val actionClass = pending.actionClass
+                if (actionClass != null) {
+                    val resolved = currentSchema.fieldByName(pending.field.name)
+                    if (
+                        resolved == null ||
+                        pending.field !== resolved ||
+                        resolved.meta?.actionClass != actionClass ||
+                        !isFieldVisible(resolved) ||
+                        !isFieldEnabled(resolved)
+                    ) {
                         pendingConfirmation = null
+                        showSnackbar("Action is no longer available")
                         return@SettingConfirmationDialog
                     }
-                    onSet(pending.field.name, pending.value)
+                    pendingConfirmation = null
+                    launchAction(resolved, actionClass)
+                } else {
+                    val resolved = currentSchema.fieldByName(pending.field.name)
+                    val meta = resolved?.meta
+                    if (resolved == null || pending.field !== resolved || meta == null) {
+                        pendingConfirmation = null
+                        clearToggleDraft(pending, toggleDrafts)
+                        showSnackbar("Setting is no longer available")
+                        return@SettingConfirmationDialog
+                    }
+                    val validation = safeValidate(meta, pending.value, currentStringProvider)
+                    if (validation is ValidationResult.Invalid) {
+                        pendingConfirmation = null
+                        clearToggleDraft(pending, toggleDrafts)
+                        showSnackbar(validation.message)
+                        return@SettingConfirmationDialog
+                    }
+                    if (!isFieldVisible(resolved) || !isFieldEnabled(resolved)) {
+                        pendingConfirmation = null
+                        clearToggleDraft(pending, toggleDrafts)
+                        showSnackbar("Setting is disabled")
+                        return@SettingConfirmationDialog
+                    }
+                    if (pending.value == null && !canWriteNull(resolved)) {
+                        pendingConfirmation = null
+                        showSnackbar("This setting cannot be cleared")
+                        return@SettingConfirmationDialog
+                    }
+                    pendingConfirmation = null
+                    clearToggleDraft(pending, toggleDrafts)
+                    commitSet(resolved, pending.value)
                 }
-                pendingConfirmation = null
             },
-            onDismiss = { pendingConfirmation = null }
+            onDismiss = {
+                if (pendingConfirmation == pending) {
+                    clearToggleDraft(pending, toggleDrafts)
+                    pendingConfirmation = null
+                }
+            },
         )
     }
 }
 
+private const val NULL_DROPDOWN_INDEX = -1
+
+private enum class DialogKind {
+    DROPDOWN,
+    SLIDER,
+    TEXT,
+    TIME,
+}
+
 private data class PendingConfirmation<T>(
+    val schema: SettingsSchema<T>,
     val field: SettingField<T, *>,
-    val value: Any,
-    val isAction: Boolean,
+    val value: Any?,
+    val actionClass: KClass<out SettingAction>?,
     val config: ConfirmationConfig,
 )
 
-/** Shared rounding: dialog and subtitle must agree (round, not truncate). */
+private fun clearToggleDraft(
+    pending: PendingConfirmation<*>,
+    drafts: MutableMap<String, ToggleDraft>,
+) {
+    if (pending.actionClass != null) return
+    val value = pending.value as? Boolean ?: return
+    if (drafts[pending.field.name]?.requested == value) {
+        drafts.remove(pending.field.name)
+    }
+}
+
+private data class ToggleDraft(
+    val requested: Boolean,
+    val baseline: Boolean,
+)
+
+@Composable
+private fun UnsupportedSettingRow(title: String, description: String?) {
+    SettingsItem(
+        title = title,
+        subtitle = "Unsupported setting type",
+        description = description,
+        enabled = false,
+        onClick = {},
+    )
+}
+
+private fun safeResourceString(
+    provider: StringResourceProvider,
+    resource: Int,
+    fallback: String,
+): String = if (resource == 0) fallback else runCatching { provider.getString(resource) }.getOrElse { fallback }
+
+private fun safeResolvedTitle(meta: SettingMeta, provider: StringResourceProvider): String =
+    runCatching { meta.resolvedTitle(provider) }.getOrElse { meta.title.ifBlank { "Setting" } }
+
+private fun safeResolvedDescription(meta: SettingMeta, provider: StringResourceProvider): String =
+    runCatching { meta.resolvedDescription(provider) }.getOrElse { meta.description }
+
+private fun safeValidate(
+    meta: SettingMeta,
+    value: Any?,
+    provider: StringResourceProvider,
+): ValidationResult = try {
+    meta.validate(value, provider)
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    ValidationResult.Invalid("Validation unavailable")
+}
+
+private fun <T> supportsDropdown(
+    field: SettingField<T, *>,
+    meta: SettingMeta,
+    model: T,
+): Boolean {
+    if (SettingFieldCapability.DROPDOWN in field.capabilities) return true
+    val hasOptions = try {
+        field.getDropdownOptions()?.isNotEmpty() == true
+    } catch (_: RuntimeException) {
+        false
+    }
+    if (meta.options.isNotEmpty() || hasOptions) return true
+    return try {
+        field.toUiDropdownIndex(model) != null
+    } catch (_: RuntimeException) {
+        false
+    }
+}
+
+private fun <T> supportsSlider(
+    field: SettingField<T, *>,
+    meta: SettingMeta,
+    model: T,
+): Boolean {
+    if (SettingFieldCapability.SLIDER in field.capabilities) return true
+    if (meta.valueKind in numericValueKinds && field.supportsExplicitNull) return true
+    return try {
+        field.toUiSliderValue(model)?.takeIf { it.isFinite() } != null
+    } catch (_: RuntimeException) {
+        false
+    }
+}
+
+private val numericValueKinds = setOf(
+    ValueKind.INT,
+    ValueKind.LONG,
+    ValueKind.FLOAT,
+    ValueKind.DOUBLE,
+)
+
+internal fun resolveDropdownLabels(
+    field: SettingField<*, *>,
+    meta: SettingMeta,
+    provider: StringResourceProvider,
+): List<String> {
+    val fieldOptions = try {
+        field.getDropdownOptions()
+    } catch (_: RuntimeException) {
+        null
+    }
+    val declaredOptions = meta.options
+    val resolvedOptions = try {
+        meta.resolvedOptions(provider).orEmpty()
+    } catch (_: RuntimeException) {
+        emptyList()
+    }
+
+    if (meta.optionsRes != 0 && declaredOptions.isNotEmpty() && resolvedOptions.size != declaredOptions.size) {
+        return fieldOptions ?: declaredOptions
+    }
+    if (resolvedOptions.isEmpty()) {
+        return if (declaredOptions.isNotEmpty()) declaredOptions else fieldOptions.orEmpty()
+    }
+    if (fieldOptions == null) return resolvedOptions
+    return if (resolvedOptions.size == fieldOptions.size) resolvedOptions else fieldOptions
+}
+
 internal fun formatSliderValue(value: Float, step: Float): String {
-    return if (step < 1f) {
-        val v = (value * 10f).roundToInt() / 10f
-        v.toString()
+    val safeValue = if (value.isFinite()) value else 0f
+    val safeStep = if (step.isFinite() && step > 0f) step else 1f
+    return if (safeStep < 1f) {
+        val rounded = (safeValue * 10f).roundToInt() / 10f
+        rounded.toString()
     } else {
-        value.roundToInt().toString()
+        safeValue.roundToInt().toString()
     }
 }
 
@@ -544,7 +955,6 @@ private fun formatMinutesOfDay(totalMinutes: Int, use24Hour: Boolean = true): St
     val clamped = totalMinutes.coerceIn(0, 1439)
     val hour = clamped / 60
     val minute = clamped % 60
-
     return if (use24Hour) {
         "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
     } else {

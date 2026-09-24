@@ -15,6 +15,15 @@ interface SettingsSchema<T> {
     /** All fields (both @Setting and @Persisted) */
     val fields: List<SettingField<T, *>>
 
+    val schemaVersion: Int
+        get() = 0
+
+    val fieldMetadata: Map<String, SchemaFieldMetadata>
+        get() = emptyMap()
+
+    val categoryTitleResources: Map<KClass<*>, Int>
+        get() = emptyMap()
+
     /** Find field by property name */
     fun fieldByName(name: String): SettingField<T, *>? =
         fields.firstOrNull { it.name == name }
@@ -82,9 +91,9 @@ interface SettingsSchema<T> {
 
     /** Get fields that can be reset (excludes non-persisted placeholders and noReset). */
     fun resettableFields(): List<SettingField<T, *>> =
-        fields.filter { it.isResettable && it.meta?.noReset != true }
+        fields.filter { it.isPersisted && it.isResettable && it.meta?.noReset != true }
 
     /** Get fields in a category that can be reset */
     fun resettableFieldsInCategory(category: KClass<*>): List<SettingField<T, *>> =
-        uiFields().filter { it.meta?.category == category && it.meta?.noReset != true }
+        resettableFields().filter { it.meta?.category == category }
 }

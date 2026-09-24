@@ -2,6 +2,7 @@ package io.github.mlmgames.settings.core.fields
 
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.mlmgames.settings.core.SettingField
 import io.github.mlmgames.settings.core.SettingMeta
@@ -15,10 +16,9 @@ class SerializedField<T, V>(
     private val getter: (T) -> V,
     private val setter: (T, V) -> T,
     private val serializer: KSerializer<V>,
-    private val defaultValue: V,
+    @Suppress("unused") private val defaultValue: V,
     private val json: Json = DefaultJson,
 ) : SettingField<T, V> {
-
     companion object {
         val DefaultJson: Json = Json {
             ignoreUnknownKeys = true
@@ -28,36 +28,32 @@ class SerializedField<T, V>(
         }
     }
 
-    private val key = stringPreferencesKey(keyName)
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = stringPreferencesKey(storageKeyName(keyName, "serialized"))
+    private val legacyKey = stringPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, legacyKey)
 
     override fun get(model: T): V = getter(model)
     override fun set(model: T, value: V): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): V? {
-        val jsonString = prefs[key] ?: return null
+        val stored = prefs.safeGet(key) ?: prefs.safeGet(legacyKey) ?: return null
         return try {
-            json.decodeFromString(serializer, jsonString)
-        } catch (e: Exception) {
+            json.decodeFromString(serializer, stored)
+        } catch (_: Exception) {
             null
         }
     }
-
-    /**
-     * Serialization failures propagate so repositories never silently report
-     * success while persisting nothing.
-     */
     override fun write(prefs: MutablePreferences, value: V) {
-        prefs[key] = json.encodeToString(serializer, value)
+        val encoded = json.encodeToString(serializer, value)
+        prefs[key] = encoded
+        prefs[legacyKey] = encoded
     }
-
-    override fun encodeValue(value: V): String = "j:" + json.encodeToString(serializer, value)
-
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override fun encodeValue(value: V): String =
+        FieldEncoding.encode(FieldEncoding.SERIALIZED, json.encodeToString(serializer, value))
     override fun decodeValue(encoded: String): V {
-        return json.decodeFromString(serializer, encoded.substringAfter(':'))
+        val tagged = FieldEncoding.tagged(encoded, FieldEncoding.SERIALIZED)
+        return json.decodeFromString(serializer, tagged.payload)
     }
 }
 
@@ -70,48 +66,71 @@ class NullableSerializedField<T, V : Any>(
     private val serializer: KSerializer<V>,
     private val json: Json = SerializedField.DefaultJson,
 ) : SettingField<T, V?> {
-
     companion object {
-        private const val NULL_MARKER = "__NULL__"
+        internal const val NULL_MARKER = "__NULL__"
     }
 
-    private val key = stringPreferencesKey(keyName)
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = stringPreferencesKey(storageKeyName(keyName, "nullable_serialized"))
+    private val nullKey = booleanPreferencesKey(nullStorageKeyName(keyName, "nullable_serialized"))
+    private val legacyKey = stringPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey)
 
     override fun get(model: T): V? = getter(model)
     override fun set(model: T, value: V?): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun isExplicitNull(prefs: Preferences): Boolean =
-        prefs[key] == NULL_MARKER
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): V? {
-        val jsonString = prefs[key] ?: return null
-        if (jsonString == NULL_MARKER) return null
+        if (nullKey in prefs) return null
+        val stored = if (key in prefs) {
+            prefs.safeGet(key) ?: return null
+        } else {
+            val legacy = prefs.safeGet(legacyKey) ?: return null
+            if (legacy == NULL_MARKER) return null
+            legacy
+        }
         return try {
-            json.decodeFromString(serializer, jsonString)
-        } catch (e: Exception) {
+            json.decodeFromString(serializer, stored)
+        } catch (_: Exception) {
             null
         }
     }
-
     override fun write(prefs: MutablePreferences, value: V?) {
+        prefs.removeAny(physicalKeys)
         if (value == null) {
-            prefs[key] = NULL_MARKER
+            prefs[nullKey] = true
+            prefs[legacyKey] = NULL_MARKER
         } else {
-            prefs[key] = json.encodeToString(serializer, value)
+            val encoded = json.encodeToString(serializer, value)
+            prefs[key] = encoded
+            prefs[legacyKey] = encoded
         }
     }
-
-    override fun encodeValue(value: V?): String {
-        if (value == null) return "n:"
-        return "j:" + json.encodeToString(serializer, value)
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        nullKey in prefs || (key !in prefs && prefs.safeGet(legacyKey) == NULL_MARKER)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override val supportsExplicitNull: Boolean
+        get() = true
+    override fun encodeValue(value: V?): String = when (value) {
+        null -> FieldEncoding.encode(FieldEncoding.NULL, "")
+        else -> FieldEncoding.encode(FieldEncoding.NULLABLE_SERIALIZED, json.encodeToString(serializer, value))
     }
-
     override fun decodeValue(encoded: String): V? {
-        val data = encoded.substringAfter(':')
-        if (data.isEmpty()) return null
-        return json.decodeFromString(serializer, data)
+        val tagged = FieldEncoding.tagged(
+            encoded,
+            FieldEncoding.NULL,
+            FieldEncoding.NULLABLE_SERIALIZED,
+            FieldEncoding.SERIALIZED,
+        )
+        return when (tagged.tag) {
+            FieldEncoding.NULL -> {
+                if (tagged.payload.isEmpty()) null
+                else throw IllegalArgumentException("Invalid null payload: $encoded")
+            }
+            FieldEncoding.NULLABLE_SERIALIZED -> json.decodeFromString(serializer, tagged.payload)
+            FieldEncoding.SERIALIZED -> when (tagged.payload) {
+                "", NULL_MARKER -> null
+                else -> json.decodeFromString(serializer, tagged.payload)
+            }
+            else -> throw IllegalArgumentException("Invalid nullable serialized value: $encoded")
+        }
     }
 }

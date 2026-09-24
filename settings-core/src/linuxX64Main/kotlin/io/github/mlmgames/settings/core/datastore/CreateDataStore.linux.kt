@@ -17,13 +17,15 @@ import platform.posix.getenv
 import kotlin.coroutines.CoroutineContext
 
 @OptIn(ExperimentalForeignApi::class)
-fun createSettingsDataStore(name: String): DataStore<Preferences> =
-    createDataStore(
+fun createSettingsDataStore(name: String): DataStore<Preferences> {
+    requireSafeDataStoreName(name)
+    return createDataStore(
         producePath = {
             val home = getenv("HOME")?.toKString() ?: "/tmp"
             "$home/.config/$name.preferences_pb"
         }
     )
+}
 
 internal actual fun createPreferencesStorage(path: String): Storage<Preferences> =
     OkioStorage(
@@ -31,6 +33,9 @@ internal actual fun createPreferencesStorage(path: String): Storage<Preferences>
         serializer = PreferencesSerializer,
         producePath = { path.toPath() }
     )
+
+internal actual fun canonicalDataStorePath(path: String): String? =
+    path.toPath(normalize = true).toString()
 
 internal actual val dataStoreContext: CoroutineContext =
     CoroutineScope(Dispatchers.IO + SupervisorJob()).coroutineContext

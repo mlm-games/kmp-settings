@@ -1,49 +1,119 @@
 package io.github.mlmgames.settings.ksp
 
-import com.google.devtools.ksp.processing.*
-import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.KspExperimental
+import com.google.devtools.ksp.processing.CodeGenerator
+import com.google.devtools.ksp.processing.Dependencies
+import com.google.devtools.ksp.processing.KSPLogger
+import com.google.devtools.ksp.processing.Resolver
+import com.google.devtools.ksp.processing.SymbolProcessor
+import com.google.devtools.ksp.symbol.ClassKind
+import com.google.devtools.ksp.symbol.KSAnnotated
+import com.google.devtools.ksp.symbol.KSAnnotation
+import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSDeclaration
+import com.google.devtools.ksp.symbol.KSFile
+import com.google.devtools.ksp.symbol.KSFunctionDeclaration
+import com.google.devtools.ksp.symbol.KSNode
+import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
+import com.google.devtools.ksp.symbol.KSTypeAlias
+import com.google.devtools.ksp.symbol.KSTypeArgument
+import com.google.devtools.ksp.symbol.KSTypeParameter
+import com.google.devtools.ksp.symbol.KSValueArgument
+import com.google.devtools.ksp.symbol.Modifier
+import com.google.devtools.ksp.symbol.Variance
 import com.google.devtools.ksp.validate
-import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.MemberName
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.PropertySpec
+import com.squareup.kotlinpoet.TypeName
+import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.WildcardTypeName
+import com.squareup.kotlinpoet.ksp.TypeParameterResolver
 import com.squareup.kotlinpoet.ksp.toClassName
+import com.squareup.kotlinpoet.ksp.toTypeName as ksToTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
+import kotlin.math.abs
 
 class SettingsProcessor(
     private val codeGenerator: CodeGenerator,
     private val logger: KSPLogger,
 ) : SymbolProcessor {
 
-    companion object {
-        private const val SETTING_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Setting"
-        private const val PERSISTED_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Persisted"
-        private const val SERIALIZED_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Serialized"
-        private const val CATEGORY_DEF_ANNOTATION = "io.github.mlmgames.settings.core.annotations.CategoryDefinition"
-        private const val ACTION_HANDLER_ANNOTATION = "io.github.mlmgames.settings.core.annotations.ActionHandler"
-        private const val RANGE_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Range"
-        private const val LENGTH_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Length"
-        private const val PATTERN_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Pattern"
-        private const val REQUIRED_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Required"
-        private const val REQUIRES_CONFIRMATION_ANNOTATION = "io.github.mlmgames.settings.core.annotations.RequiresConfirmation"
-        private const val NO_RESET_ANNOTATION = "io.github.mlmgames.settings.core.annotations.NoReset"
-        private const val CONFIRM_RESET_ANNOTATION = "io.github.mlmgames.settings.core.annotations.ConfirmReset"
-        private const val SERIALIZED_WITH_ANNOTATION = "io.github.mlmgames.settings.core.annotations.SerializedWith"
-        private const val VALIDATED_BY_ANNOTATION = "io.github.mlmgames.settings.core.annotations.ValidatedBy"
-        private const val KOTLINX_SERIALIZABLE = "kotlinx.serialization.Serializable"
+    private companion object {
+        const val SETTING_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Setting"
+        const val PERSISTED_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Persisted"
+        const val SERIALIZED_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Serialized"
+        const val CATEGORY_DEF_ANNOTATION = "io.github.mlmgames.settings.core.annotations.CategoryDefinition"
+        const val ACTION_HANDLER_ANNOTATION = "io.github.mlmgames.settings.core.annotations.ActionHandler"
+        const val RANGE_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Range"
+        const val LENGTH_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Length"
+        const val PATTERN_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Pattern"
+        const val REQUIRED_ANNOTATION = "io.github.mlmgames.settings.core.annotations.Required"
+        const val REQUIRES_CONFIRMATION_ANNOTATION = "io.github.mlmgames.settings.core.annotations.RequiresConfirmation"
+        const val NO_RESET_ANNOTATION = "io.github.mlmgames.settings.core.annotations.NoReset"
+        const val CONFIRM_RESET_ANNOTATION = "io.github.mlmgames.settings.core.annotations.ConfirmReset"
+        const val SERIALIZED_WITH_ANNOTATION = "io.github.mlmgames.settings.core.annotations.SerializedWith"
+        const val VALIDATED_BY_ANNOTATION = "io.github.mlmgames.settings.core.annotations.ValidatedBy"
+        const val SCHEMA_VERSION_ANNOTATION = "io.github.mlmgames.settings.core.annotations.SchemaVersion"
+        const val RENAMED_FROM_ANNOTATION = "io.github.mlmgames.settings.core.annotations.RenamedFrom"
+        const val ADDED_IN_VERSION_ANNOTATION = "io.github.mlmgames.settings.core.annotations.AddedInVersion"
+        const val DEPRECATED_SETTING_ANNOTATION = "io.github.mlmgames.settings.core.annotations.DeprecatedSetting"
+        const val KOTLINX_SERIALIZABLE = "kotlinx.serialization.Serializable"
+
+        val PROPERTY_ANNOTATIONS = listOf(
+            SERIALIZED_ANNOTATION,
+            SERIALIZED_WITH_ANNOTATION,
+            RANGE_ANNOTATION,
+            LENGTH_ANNOTATION,
+            PATTERN_ANNOTATION,
+            REQUIRED_ANNOTATION,
+            VALIDATED_BY_ANNOTATION,
+            ACTION_HANDLER_ANNOTATION,
+            REQUIRES_CONFIRMATION_ANNOTATION,
+            NO_RESET_ANNOTATION,
+            CONFIRM_RESET_ANNOTATION,
+            RENAMED_FROM_ANNOTATION,
+            ADDED_IN_VERSION_ANNOTATION,
+            DEPRECATED_SETTING_ANNOTATION,
+        )
+
+        val RESERVED_KEYS = setOf(
+            "__schema_version__",
+            "__settings_lock_enabled__",
+            "__settings_pin_hash__",
+            "__settings_lock_timeout__",
+            "__settings_last_unlock__",
+        )
+        const val UNKNOWN_BACKUP_PREFIX = "__unknown_backup__:"
     }
 
     private val corePackage = "io.github.mlmgames.settings.core"
     private val fieldsPackage = "$corePackage.fields"
-    private val settingPlatformClass = ClassName("io.github.mlmgames.settings.core.annotations", "SettingPlatform")
-    private val valueKindClass = ClassName(corePackage, "ValueKind")
+    private val typesPackage = "$corePackage.types"
+    private val annotationsPackage = "$corePackage.annotations"
 
-    // Core types
     private val settingsSchema = ClassName(corePackage, "SettingsSchema")
-    private val settingMeta = ClassName(corePackage, "SettingMeta")
     private val settingField = ClassName(corePackage, "SettingField")
+    private val schemaFieldMetadataClass = ClassName(corePackage, "SchemaFieldMetadata")
     private val validationRules = ClassName(corePackage, "ValidationRules")
     private val confirmationConfig = ClassName(corePackage, "ConfirmationConfig")
+    private val valueKindClass = ClassName(corePackage, "ValueKind")
+    private val settingPlatformClass = ClassName(annotationsPackage, "SettingPlatform")
+    private val kSerializerClass = ClassName("kotlinx.serialization", "KSerializer")
+    private val serialDescriptorClass = ClassName("kotlinx.serialization.descriptors", "SerialDescriptor")
+    private val primitiveKindClass = ClassName("kotlinx.serialization.descriptors", "PrimitiveKind")
+    private val encoderClass = ClassName("kotlinx.serialization.encoding", "Encoder")
+    private val decoderClass = ClassName("kotlinx.serialization.encoding", "Decoder")
+    private val primitiveSerialDescriptor = MemberName(
+        "kotlinx.serialization.descriptors",
+        "PrimitiveSerialDescriptor",
+    )
+    private val serializerFunction = MemberName("kotlinx.serialization", "serializer")
 
-    // Primitive fields
     private val booleanField = ClassName(fieldsPackage, "BooleanField")
     private val intField = ClassName(fieldsPackage, "IntField")
     private val longField = ClassName(fieldsPackage, "LongField")
@@ -53,7 +123,6 @@ class SettingsProcessor(
     private val stringSetField = ClassName(fieldsPackage, "StringSetField")
     private val unitField = ClassName(fieldsPackage, "UnitField")
 
-    // Nullable fields
     private val nullableBooleanField = ClassName(fieldsPackage, "NullableBooleanField")
     private val nullableIntField = ClassName(fieldsPackage, "NullableIntField")
     private val nullableLongField = ClassName(fieldsPackage, "NullableLongField")
@@ -61,17 +130,16 @@ class SettingsProcessor(
     private val nullableDoubleField = ClassName(fieldsPackage, "NullableDoubleField")
     private val nullableStringField = ClassName(fieldsPackage, "NullableStringField")
 
-    // Collection fields
     private val stringListField = ClassName(fieldsPackage, "StringListField")
     private val intListField = ClassName(fieldsPackage, "IntListField")
     private val longListField = ClassName(fieldsPackage, "LongListField")
     private val stringMapField = ClassName(fieldsPackage, "StringMapField")
     private val stringLongMapField = ClassName(fieldsPackage, "StringLongMapField")
     private val stringIntMapField = ClassName(fieldsPackage, "StringIntMapField")
-
     private val stringFloatMapField = ClassName(fieldsPackage, "StringFloatMapField")
     private val stringDoubleMapField = ClassName(fieldsPackage, "StringDoubleMapField")
     private val stringBooleanMapField = ClassName(fieldsPackage, "StringBooleanMapField")
+    private val configuredSettingField = ClassName(fieldsPackage, "ConfiguredSettingField")
     private val intStringMapField = ClassName(fieldsPackage, "IntStringMapField")
     private val intIntMapField = ClassName(fieldsPackage, "IntIntMapField")
     private val intLongMapField = ClassName(fieldsPackage, "IntLongMapField")
@@ -79,239 +147,1082 @@ class SettingsProcessor(
     private val longLongMapField = ClassName(fieldsPackage, "LongLongMapField")
     private val longIntMapField = ClassName(fieldsPackage, "LongIntMapField")
 
-
-    // Complex fields
     private val serializedField = ClassName(fieldsPackage, "SerializedField")
     private val nullableSerializedField = ClassName(fieldsPackage, "NullableSerializedField")
     private val enumField = ClassName(fieldsPackage, "EnumField")
     private val nullableEnumField = ClassName(fieldsPackage, "NullableEnumField")
 
+    private val generatedClasses = mutableSetOf<String>()
+    private val blockedClasses = mutableSetOf<String>()
+    private val schemaNames = mutableMapOf<String, String>()
+    private val usedSchemaNames = mutableMapOf<String, String>()
+
+    private enum class AnnotationKind { SETTING, PERSISTED }
+
+    private enum class UiKind {
+        TOGGLE,
+        DROPDOWN,
+        SLIDER,
+        BUTTON,
+        TEXT_INPUT,
+        TIME_PICKER,
+        CUSTOM,
+    }
+
+    private enum class FieldKind {
+        PRIMITIVE,
+        COLLECTION,
+        ENUM,
+        SERIALIZED,
+        UNIT,
+    }
+
+    private data class FieldPlan(
+        val property: KSPropertyDeclaration,
+        val propertyName: String,
+        val propertyType: KSType,
+        val baseType: KSType,
+        val nullable: Boolean,
+        val kind: FieldKind,
+        val fieldClass: ClassName,
+        val logicalKey: String,
+        val physicalKeys: List<String>,
+        val valueKind: String,
+        val enumTypeName: String?,
+        val serializer: CustomSerializerSpec?,
+        val validator: CustomValidatorSpec?,
+    )
+
+    private data class CustomValidatorSpec(
+        val className: ClassName,
+        val declaration: KSClassDeclaration,
+        val instance: CodeBlock,
+    )
+
+    private data class CustomSerializerSpec(
+        val className: ClassName,
+        val declaration: KSClassDeclaration,
+        val instance: CodeBlock,
+    )
+
+    private data class ValidationMessage(val text: String, val resource: Int)
+
+    private data class SettingConfig(
+        val title: String,
+        val description: String,
+        val titleRes: Int,
+        val descriptionRes: Int,
+        val categoryClass: ClassName,
+        val categoryOrder: Int,
+        val categoryTitleRes: Int,
+        val typeClass: ClassName,
+        val uiKind: UiKind,
+        val key: String,
+        val dependsOn: String,
+        val min: Float,
+        val max: Float,
+        val step: Float,
+        val options: List<String>,
+        val optionsRes: Int,
+        val actionClass: ClassName?,
+        val platforms: List<String>,
+        val validationMessage: ValidationMessage?,
+    )
+
+    private data class FieldMetadata(
+        val renamedFrom: String?,
+        val renamedSinceVersion: Int?,
+        val addedInVersion: Int?,
+        val deprecated: Boolean,
+        val deprecationMessage: String?,
+        val removeInVersion: Int?,
+    )
+
+    private data class ClassAnalysis(
+        val plans: List<FieldPlan>,
+        val settingConfigs: Map<String, SettingConfig>,
+        val metadata: Map<String, FieldMetadata>,
+        val schemaVersion: Int,
+        val categoryTitleResources: Map<ClassName, Int>,
+    )
+
+    private class Diagnostics(private val logger: KSPLogger) {
+        var hasErrors: Boolean = false
+            private set
+
+        fun error(message: String, symbol: KSNode? = null) {
+            hasErrors = true
+            if (symbol == null) logger.error(message) else logger.error(message, symbol)
+        }
+    }
+
     override fun process(resolver: Resolver): List<KSAnnotated> {
-        val settingProps = resolver
-            .getSymbolsWithAnnotation(SETTING_ANNOTATION)
-            .filterIsInstance<KSPropertyDeclaration>()
-            .toList()
+        val allProperties = collectAnnotatedProperties(resolver)
+        val propertyKeys = allProperties.mapTo(mutableSetOf()) { propertyKey(it) }
+        validateStandaloneAnnotations(resolver, propertyKeys)
 
-        val persistedProps = resolver
-            .getSymbolsWithAnnotation(PERSISTED_ANNOTATION)
-            .filterIsInstance<KSPropertyDeclaration>()
-            .toList()
-
-        val allProps = settingProps + persistedProps
-        val invalid = allProps.filterNot { it.validate() }
-
-        // Only process validated symbols; deferred ones re-run next round.
-        val validProps = allProps.filter { it.validate() }
-
-        // A property carrying both annotations would generate two fields on one
-        // key. Fail loudly per property instead of corrupting DataStore.
-        for (prop in validProps) {
-            val hasSetting = prop.annotations.any {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == SETTING_ANNOTATION
-            }
-            val hasPersisted = prop.annotations.any {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == PERSISTED_ANNOTATION
-            }
-            if (hasSetting && hasPersisted) {
-                logger.error("@Setting and @Persisted are mutually exclusive on '${prop.simpleName.asString()}'", prop)
-            }
-        }
-
-        val processable = validProps.filter { prop ->
-            val hasSetting = prop.annotations.any {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == SETTING_ANNOTATION
-            }
-            val hasPersisted = prop.annotations.any {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == PERSISTED_ANNOTATION
-            }
-            !(hasSetting && hasPersisted)
-        }
-
-        val byClass = processable.groupBy { it.parentDeclaration as? KSClassDeclaration }
-
-        for ((klass, props) in byClass) {
-            if (klass == null) {
-                for (prop in props) {
-                    logger.error("@Setting/@Persisted must be inside a data class (found top-level '${prop.simpleName.asString()}')", prop)
-                }
-                continue
-            }
-            generateSchemaForClass(klass, props, resolver)
-        }
-
-        return invalid
-    }
-
-    private fun generateSchemaForClass(
-        klass: KSClassDeclaration,
-        allProps: List<KSPropertyDeclaration>,
-        resolver: Resolver,
-    ) {
-        val pkg = klass.packageName.asString()
-        val className = klass.simpleName.asString()
-
-        if (Modifier.DATA !in klass.modifiers) {
-            logger.error("@Setting/@Persisted can only be used on data class properties.", klass)
-            return
-        }
-
-        // No-arg construction: generated `default = Model()` and per-field
-        // `Model().prop` defaults require every primary-constructor param to
-        // carry a default. Without this the schema won't compile.
-        val ctorParamsWithoutDefaults = klass.primaryConstructor
-            ?.parameters?.filter { !it.hasDefault }?.mapNotNull { it.name?.asString() }
-            .orEmpty()
-        if (ctorParamsWithoutDefaults.isNotEmpty()) {
+        val deferred = mutableListOf<KSAnnotated>()
+        val topLevel = allProperties.filter { it.parentDeclaration !is KSClassDeclaration }
+        for (property in topLevel) {
             logger.error(
-                "${klass.simpleName.asString()} must provide defaults for all constructor params (missing: ${ctorParamsWithoutDefaults.joinToString()}), otherwise generated schema cannot construct defaults",
-                klass
+                "@Setting/@Persisted must be a primary-constructor property of a data class; '${property.simpleName.asString()}' is not inside a data class",
+                property,
             )
-            return
         }
 
-        // Duplicate and colliding keys corrupt DataStore (keys compare by name
-        // only). Detect explicit key= collisions and snake_case collisions here.
-        val seenKeys = mutableMapOf<String, String>()
-        for (prop in allProps) {
-            val key = keyForProp(prop, SETTING_ANNOTATION, PERSISTED_ANNOTATION)
-            val prev = seenKeys.putIfAbsent(key, prop.simpleName.asString())
-            if (prev != null) {
+        val grouped = allProperties
+            .filter { it.parentDeclaration is KSClassDeclaration }
+            .groupBy { it.parentDeclaration as KSClassDeclaration }
+
+        for ((klass, properties) in grouped) {
+            val classId = classId(klass)
+            if (classId in generatedClasses || classId in blockedClasses) continue
+
+            if (!classReady(klass) || properties.any { !propertyReady(it) }) {
+                deferred.addAll(properties)
+                continue
+            }
+
+            val analysis = analyzeClass(klass, properties, resolver)
+            if (analysis == null) {
+                blockedClasses += classId
+                continue
+            }
+
+            val schemaName = schemaNameFor(klass)
+            if (schemaName == null) {
+                logger.error("Cannot choose a unique schema name for ${canonicalName(klass)}", klass)
+                blockedClasses += classId
+                continue
+            }
+            if (schemaNameConflictsWithSource(resolver, klass, schemaName)) {
                 logger.error(
-                    "Duplicate persistence key '$key' (properties '$prev' and '${prop.simpleName.asString()}'). Set explicit key= values.",
-                    prop
+                    "Generated schema '$schemaName' collides with an existing declaration in ${klass.packageName.asString()}",
+                    klass,
                 )
+                blockedClasses += classId
+                continue
+            }
+
+            try {
+                generateSchema(klass, properties, analysis, schemaName, resolver)
+                generatedClasses += classId
+            } catch (error: Exception) {
+                logger.error("Failed to generate schema for ${canonicalName(klass)}: ${error.message}", klass)
+                blockedClasses += classId
             }
         }
 
-        val schemaName = "${className}Schema"
-        val modelClass = klass.toClassName()
+        return deferred.distinctBy { propertyKey(it as KSPropertyDeclaration) }
+    }
 
-        val settingProps = allProps.filter { prop ->
-            prop.annotations.any {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == SETTING_ANNOTATION
-            }
+    private fun collectAnnotatedProperties(resolver: Resolver): List<KSPropertyDeclaration> {
+        val result = linkedMapOf<String, KSPropertyDeclaration>()
+        for (annotation in listOf(SETTING_ANNOTATION, PERSISTED_ANNOTATION)) {
+            val symbols = runCatching {
+                resolver.getSymbolsWithAnnotation(annotation).filterIsInstance<KSPropertyDeclaration>()
+            }.getOrDefault(emptySequence())
+            for (property in symbols) result.putIfAbsent(propertyKey(property), property)
         }
-        val persistedProps = allProps.filter { prop ->
-            prop.annotations.any {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == PERSISTED_ANNOTATION
-            }
-        }
+        return result.values.toList()
+    }
 
-        val fieldsCode = CodeBlock.builder()
-        fieldsCode.add("listOf(\n")
-        fieldsCode.indent()
-
-        // Validate cross-field references once per class: every dependsOn must
-        // name a sibling property, and the graph must be acyclic. Runtime
-        // fail-open (isEnabled) can no longer hide typos.
-        validateDependencies(allProps)
-
-        // Validate each property's own configuration (slider bounds, dropdown
-        // options, Button/action pairing, validation applicability...).
-        val propByName = allProps.associateBy { it.simpleName.asString() }
-        for (prop in settingProps) {
-            validateSettingProp(prop, propByName, resolver)
-        }
-        for (prop in persistedProps) {
-            validatePersistedProp(prop, resolver)
-        }
-
-        for (prop in settingProps) {
-            val fieldCode = generateSettingField(prop, modelClass, resolver)
-            if (fieldCode != null) {
-                fieldsCode.add(fieldCode)
-                fieldsCode.add(",\n")
-            }
-        }
-
-        for (prop in persistedProps) {
-            val fieldCode = generatePersistedField(prop, modelClass, resolver)
-            if (fieldCode != null) {
-                fieldsCode.add(fieldCode)
-                fieldsCode.add(",\n")
-            }
-        }
-
-        fieldsCode.unindent()
-        fieldsCode.add(")\n")
-
-        val typeSpec = TypeSpec.objectBuilder(schemaName)
-            .addSuperinterface(settingsSchema.parameterizedBy(modelClass))
-            .addProperty(
-                PropertySpec.builder("default", modelClass)
-                    .addModifiers(KModifier.OVERRIDE)
-                    // No-arg constructor required: every @Setting data class must
-                    // provide defaults for all constructor params. Validated here
-                    // so generated code always compiles.
-                    .initializer("%T()", modelClass)
-                    .build()
-            )
-            .addProperty(
-                PropertySpec.builder(
-                    "fields",
-                    List::class.asClassName().parameterizedBy(
-                        settingField.parameterizedBy(modelClass, STAR)
+    private fun validateStandaloneAnnotations(resolver: Resolver, propertyKeys: Set<String>) {
+        for (annotation in PROPERTY_ANNOTATIONS) {
+            val symbols = runCatching {
+                resolver.getSymbolsWithAnnotation(annotation).filterIsInstance<KSPropertyDeclaration>()
+            }.getOrDefault(emptySequence())
+            for (property in symbols) {
+                if (propertyKey(property) !in propertyKeys) {
+                    logger.error(
+                        "@${annotation.substringAfterLast('.')} requires a property annotated with @Setting or @Persisted",
+                        property,
                     )
+                }
+            }
+        }
+
+        val classesWithSchemaVersion = runCatching {
+            resolver.getSymbolsWithAnnotation(SCHEMA_VERSION_ANNOTATION)
+                .filterIsInstance<KSClassDeclaration>()
+                .toList()
+        }.getOrDefault(emptyList())
+        val processedClasses = runCatching {
+            resolver.getSymbolsWithAnnotation(SETTING_ANNOTATION)
+                .filterIsInstance<KSPropertyDeclaration>()
+                .mapNotNull { it.parentDeclaration as? KSClassDeclaration }
+                .toSet() +
+                resolver.getSymbolsWithAnnotation(PERSISTED_ANNOTATION)
+                    .filterIsInstance<KSPropertyDeclaration>()
+                    .mapNotNull { it.parentDeclaration as? KSClassDeclaration }
+                    .toSet()
+        }.getOrDefault(emptySet())
+        for (klass in classesWithSchemaVersion) {
+            if (klass !in processedClasses) {
+                logger.error(
+                    "@SchemaVersion is only supported on a class containing @Setting/@Persisted properties",
+                    klass,
                 )
-                    .addModifiers(KModifier.OVERRIDE)
-                    .initializer(fieldsCode.build())
-                    .build()
+            }
+        }
+    }
+
+    private fun classReady(klass: KSClassDeclaration): Boolean {
+        if (!runCatching { klass.validate(enableNewFeatures = true) }.getOrDefault(false)) return false
+        if (klass.primaryConstructor?.parameters.orEmpty().any { runCatching { it.type.resolve() }.getOrNull()?.isError == true }) {
+            return false
+        }
+        return true
+    }
+
+    private fun propertyReady(property: KSPropertyDeclaration): Boolean {
+        if (!runCatching { property.validate(enableNewFeatures = true) }.getOrDefault(false)) return false
+        val type = runCatching { property.type.resolve() }.getOrNull() ?: return false
+        if (type.isError || containsErrorType(type)) return false
+        return property.annotations.all { annotationReady(it) }
+    }
+
+    private fun annotationReady(annotation: KSAnnotation): Boolean {
+        if (!runCatching { annotation.annotationType.resolve().declaration.validate(enableNewFeatures = true) }.getOrDefault(false)) {
+            return false
+        }
+        return annotation.arguments.all { argument ->
+            when (val value = argument.value) {
+                is KSType -> !containsErrorType(value)
+                is List<*> -> value.all { it !is KSType || !containsErrorType(it) }
+                is Array<*> -> value.all { it !is KSType || !containsErrorType(it) }
+                else -> true
+            }
+        }
+    }
+
+    private fun containsErrorType(type: KSType): Boolean {
+        if (type.isError) return true
+        return type.arguments.any { argument ->
+            val argumentType = argument.type?.resolve() ?: return@any true
+            containsErrorType(argumentType)
+        }
+    }
+
+    private fun analyzeClass(
+        klass: KSClassDeclaration,
+        properties: List<KSPropertyDeclaration>,
+        resolver: Resolver,
+    ): ClassAnalysis? {
+        val diagnostics = Diagnostics(logger)
+        if (klass.packageName.asString().isBlank()) {
+            diagnostics.error("Settings models must be top-level or named nested classes", klass)
+        }
+        if (Modifier.DATA !in klass.modifiers) {
+            diagnostics.error("@Setting/@Persisted can only be used in a data class", klass)
+        }
+        if (Modifier.INNER in klass.modifiers) {
+            diagnostics.error("Inner settings models are not supported because the schema must construct a no-arg instance", klass)
+        }
+        if (!isAccessible(klass)) {
+            diagnostics.error("Settings model ${canonicalName(klass)} must be public or internal", klass)
+        }
+        if (hasInaccessibleParent(klass)) {
+            diagnostics.error("Settings model ${canonicalName(klass)} is enclosed by a private or protected declaration", klass)
+        }
+        if (klass.typeParameters.isNotEmpty() || hasGenericParent(klass)) {
+            diagnostics.error(
+                "Generic settings models are not supported by the object-based schema API (${canonicalName(klass)})",
+                klass,
             )
-            .build()
-
-        val fileSpec = FileSpec.builder(pkg, schemaName)
-            .addType(typeSpec)
-            .build()
-
-        fileSpec.writeTo(codeGenerator, Dependencies(false, klass.containingFile ?: run {
-            logger.error("Cannot determine containing file for ${klass.simpleName.asString()}", klass)
-            return
-        }))
-    }
-
-    private fun keyForProp(
-        prop: KSPropertyDeclaration,
-        settingAnnotation: String,
-        persistedAnnotation: String,
-    ): String {
-        val propName = prop.simpleName.asString()
-        val ann = prop.annotations.firstOrNull {
-            val qname = it.annotationType.resolve().declaration.qualifiedName?.asString()
-            qname == settingAnnotation || qname == persistedAnnotation
         }
-        val args = ann?.arguments?.associateBy { it.name?.asString().orEmpty() }.orEmpty()
-        val keyOverride = args["key"]?.value as? String ?: ""
-        return keyOverride.ifBlank { toSnakeCase(propName) }
+
+        val constructor = klass.primaryConstructor
+        if (constructor == null) {
+            diagnostics.error("Settings model ${canonicalName(klass)} must have a primary constructor", klass)
+        } else {
+            if (Modifier.PRIVATE in constructor.modifiers || Modifier.PROTECTED in constructor.modifiers) {
+                diagnostics.error("Settings model constructor must be accessible from generated code", klass)
+            }
+            val missingDefaults = constructor.parameters
+                .filter { !it.hasDefault }
+                .mapNotNull { it.name?.asString() }
+            if (missingDefaults.isNotEmpty()) {
+                diagnostics.error(
+                    "${klass.simpleName.asString()} must provide defaults for all constructor parameters (missing: ${missingDefaults.joinToString()})",
+                    klass,
+                )
+            }
+        }
+
+        val plans = mutableListOf<FieldPlan>()
+        val settingConfigs = mutableMapOf<String, SettingConfig>()
+        val metadata = mutableMapOf<String, FieldMetadata>()
+
+        for (property in properties) {
+            val propertyName = property.simpleName.asString()
+            val hasSetting = property.hasAnnotation(SETTING_ANNOTATION)
+            val hasPersisted = property.hasAnnotation(PERSISTED_ANNOTATION)
+            if (hasSetting && hasPersisted) {
+                diagnostics.error("@Setting and @Persisted are mutually exclusive on '$propertyName'", property)
+            }
+            if (!isPrimaryConstructorProperty(property)) {
+                diagnostics.error(
+                    "'$propertyName' must be a primary-constructor property; body properties cannot be represented by copy()",
+                    property,
+                )
+            }
+            if (!isAccessibleProperty(property)) {
+                diagnostics.error("'$propertyName' must be public or internal for generated access", property)
+            }
+            if (property.isDelegated()) {
+                diagnostics.error("Delegated property '$propertyName' is not supported", property)
+            }
+
+            val fieldPlan = planField(property, if (hasSetting) AnnotationKind.SETTING else AnnotationKind.PERSISTED, resolver, diagnostics)
+            if (fieldPlan != null) {
+                plans += fieldPlan
+            }
+
+            if (hasSetting) {
+                val config = parseSettingConfig(property, resolver, diagnostics)
+                if (config != null && fieldPlan != null) {
+                    settingConfigs[propertyName] = config
+                    validateSetting(property, fieldPlan, config, resolver, diagnostics)
+                }
+            } else if (hasPersisted) {
+                validatePersisted(property, diagnostics)
+                validateResetAndConfirmation(property, diagnostics)
+            }
+
+            metadata[propertyName] = parseMetadata(property, fieldPlan, diagnostics)
+        }
+
+        validateDependencies(properties, diagnostics)
+        val schemaVersion = parseSchemaVersion(klass, diagnostics)
+        validateRenames(
+            metadata,
+            plans,
+            schemaVersion,
+            klass.getAnnotation(SCHEMA_VERSION_ANNOTATION) != null,
+            diagnostics,
+        )
+        validateKeys(plans, diagnostics)
+        validateGeneratedTypeReferences(plans, diagnostics)
+        if (diagnostics.hasErrors) return null
+        return ClassAnalysis(
+            plans = plans,
+            settingConfigs = settingConfigs,
+            metadata = metadata,
+            schemaVersion = schemaVersion,
+            categoryTitleResources = settingConfigs.values
+                .associate { it.categoryClass to it.categoryTitleRes },
+        )
     }
 
-    private fun validateDependencies(allProps: List<KSPropertyDeclaration>) {
-        val names = allProps.map { it.simpleName.asString() }.toSet()
+    private fun planField(
+        property: KSPropertyDeclaration,
+        kind: AnnotationKind,
+        resolver: Resolver,
+        diagnostics: Diagnostics,
+    ): FieldPlan? {
+        val propertyName = property.simpleName.asString()
+        val propertyType = runCatching { property.type.resolve() }.getOrNull()
+        if (propertyType == null || propertyType.isError) {
+            diagnostics.error("Cannot resolve type of '$propertyName'", property)
+            return null
+        }
+
+        val baseType = resolveType(propertyType.makeNotNullable(), diagnostics, property)
+        if (baseType == null || baseType.isError) {
+            diagnostics.error("Cannot resolve the non-null backing type of '$propertyName'", property)
+            return null
+        }
+        if (baseType.declaration is KSTypeParameter) {
+            diagnostics.error("Type-parameter properties are not supported ('$propertyName')", property)
+            return null
+        }
+        if (hasInvalidTypeArguments(baseType)) {
+            diagnostics.error("Star or invalid type projections are not supported ('$propertyName')", property)
+            return null
+        }
+
+        val nullable = propertyType.isMarkedNullable
+        val baseName = baseType.declaration.qualifiedName?.asString()
+        val hasSerialized = property.hasAnnotation(SERIALIZED_ANNOTATION)
+        val hasCustomSerializer = property.hasAnnotation(SERIALIZED_WITH_ANNOTATION)
+        val customSerializer = if (hasCustomSerializer) {
+            if (!hasSerialized) {
+                diagnostics.error("@SerializedWith requires @Serialized on '$propertyName'", property)
+            }
+            parseCustomSerializer(property, resolver, diagnostics)
+        } else {
+            null
+        }
+
+        val validator = if (kind == AnnotationKind.SETTING) {
+            parseCustomValidator(property, resolver, diagnostics)
+        } else {
+            null
+        }
+
+        if (baseName == "kotlin.Unit") {
+            if (kind == AnnotationKind.PERSISTED) {
+                diagnostics.error("@Persisted cannot back a Unit property ('$propertyName')", property)
+            }
+            if (hasSerialized || hasCustomSerializer) {
+                diagnostics.error("Unit property '$propertyName' cannot use serialized storage", property)
+            }
+            if (nullable) {
+                diagnostics.error("Nullable Unit is not supported ('$propertyName')", property)
+            }
+            val key = keyFor(property, kind)
+            return FieldPlan(
+                property = property,
+                propertyName = propertyName,
+                propertyType = propertyType,
+                baseType = baseType,
+                nullable = false,
+                kind = FieldKind.UNIT,
+                fieldClass = unitField,
+                logicalKey = key,
+                physicalKeys = emptyList(),
+                valueKind = "NONE",
+                enumTypeName = null,
+                serializer = null,
+                validator = validator,
+            )
+        }
+
+        val serializable = isSerializableType(baseType, resolver, mutableSetOf())
+        val fieldKind: FieldKind
+        val fieldClass: ClassName?
+        val serializerSpec = customSerializer
+
+        if (hasCustomSerializer) {
+            if (customSerializer == null) return null
+            fieldKind = FieldKind.SERIALIZED
+            fieldClass = if (nullable) nullableSerializedField else serializedField
+        } else {
+            when {
+                isCollectionType(baseName) -> {
+                    if (nullable && !hasSerialized) {
+                        diagnostics.error(
+                            "Nullable collections require @Serialized or @SerializedWith ('$propertyName')",
+                            property,
+                        )
+                        return null
+                    }
+                    if (hasSerialized) {
+                        if (!serializable) {
+                            diagnostics.error(
+                                "@Serialized type for '$propertyName' is not serializable; add @Serializable or @SerializedWith",
+                                property,
+                            )
+                            return null
+                        }
+                        fieldKind = FieldKind.SERIALIZED
+                        fieldClass = if (nullable) nullableSerializedField else serializedField
+                    } else {
+                        val native = nativeCollectionField(baseType, nullable)
+                        if (native != null) {
+                            fieldKind = FieldKind.COLLECTION
+                            fieldClass = native
+                        } else if (serializable) {
+                            fieldKind = FieldKind.SERIALIZED
+                            fieldClass = if (nullable) nullableSerializedField else serializedField
+                        } else {
+                            diagnostics.error(
+                                "Unsupported collection type for '$propertyName'; add @Serialized or @SerializedWith",
+                                property,
+                            )
+                            return null
+                        }
+                    }
+                }
+
+                isEnumType(baseType) -> {
+                    if (hasSerialized) {
+                        if (!serializable) {
+                            diagnostics.error(
+                                "@Serialized enum '$propertyName' must be @Serializable or use @SerializedWith",
+                                property,
+                            )
+                            return null
+                        }
+                        fieldKind = FieldKind.SERIALIZED
+                        fieldClass = if (nullable) nullableSerializedField else serializedField
+                    } else {
+                        fieldKind = FieldKind.ENUM
+                        fieldClass = if (nullable) nullableEnumField else enumField
+                    }
+                }
+
+                isPrimitiveType(baseName) -> {
+                    if (hasSerialized) {
+                        fieldKind = FieldKind.SERIALIZED
+                        fieldClass = if (nullable) nullableSerializedField else serializedField
+                    } else {
+                        fieldKind = FieldKind.PRIMITIVE
+                        fieldClass = primitiveField(baseName, nullable)
+                    }
+                }
+
+                serializable -> {
+                    fieldKind = FieldKind.SERIALIZED
+                    fieldClass = if (nullable) nullableSerializedField else serializedField
+                }
+
+                else -> {
+                    diagnostics.error(
+                        "Unsupported type for '$propertyName' (${baseName ?: "unknown"}); add @Serializable, @Serialized, or @SerializedWith",
+                        property,
+                    )
+                    return null
+                }
+            }
+        }
+
+        if (fieldClass == null) {
+            diagnostics.error("No backing field supports '$propertyName' (${baseName ?: "unknown"})", property)
+            return null
+        }
+
+        val (valueKind, valueKindEnumName) = valueKindFor(baseType)
+        val enumTypeName = if (isEnumType(baseType)) {
+            valueKindEnumName ?: baseType.toClassNameOrNull()?.canonicalName
+        } else {
+            null
+        }
+        val logicalKey = keyFor(property, kind)
+        val physicalKeys = physicalKeysFor(logicalKey, fieldKind, baseName, nullable, fieldClass)
+        return FieldPlan(
+            property = property,
+            propertyName = propertyName,
+            propertyType = propertyType,
+            baseType = baseType,
+            nullable = nullable,
+            kind = fieldKind,
+            fieldClass = fieldClass,
+            logicalKey = logicalKey,
+            physicalKeys = physicalKeys,
+            valueKind = valueKind,
+            enumTypeName = enumTypeName,
+            serializer = serializerSpec,
+            validator = validator,
+        )
+    }
+
+    private fun parseCustomValidator(
+        property: KSPropertyDeclaration,
+        resolver: Resolver,
+        diagnostics: Diagnostics,
+    ): CustomValidatorSpec? {
+        val annotation = property.getAnnotation(VALIDATED_BY_ANNOTATION) ?: return null
+        val validatorType = annotation.argument("validator")?.value as? KSType
+        if (validatorType == null || validatorType.isError) {
+            diagnostics.error("Cannot resolve @ValidatedBy validator for '${property.simpleName.asString()}'", property)
+            return null
+        }
+        val declaration = validatorType.declaration as? KSClassDeclaration
+        if (declaration == null) {
+            diagnostics.error("@ValidatedBy must name a validator class", property)
+            return null
+        }
+        if (declaration.typeParameters.isNotEmpty()) {
+            diagnostics.error("Generic @ValidatedBy validator classes are not supported ('${property.simpleName.asString()}')", property)
+            return null
+        }
+        if (Modifier.INNER in declaration.modifiers || Modifier.ABSTRACT in declaration.modifiers) {
+            diagnostics.error("@ValidatedBy validator must be a concrete top-level or nested class", property)
+            return null
+        }
+        if (!isAccessible(declaration) || hasInaccessibleParent(declaration) || hasGenericParent(declaration)) {
+            diagnostics.error("@ValidatedBy validator ${canonicalName(declaration)} must be public or internal", property)
+            return null
+        }
+        val className = validatorType.toClassNameOrNull()
+        if (className == null) {
+            diagnostics.error("Cannot resolve validator class for '${property.simpleName.asString()}'", property)
+            return null
+        }
+        if (!validatorTypeMatchesProperty(declaration, property, resolver)) {
+            diagnostics.error(
+                "@ValidatedBy type must match '${property.simpleName.asString()}' (${property.type.resolve()})",
+                property,
+            )
+            return null
+        }
+        if (declaration.classKind == ClassKind.OBJECT) {
+            return CustomValidatorSpec(className, declaration, CodeBlock.of("%T", className))
+        }
+        if (declaration.classKind != ClassKind.CLASS) {
+            diagnostics.error("@ValidatedBy validator must be an object or a class", property)
+            return null
+        }
+        if (!hasAccessibleNoArgConstructor(declaration)) {
+            diagnostics.error("@ValidatedBy validator ${canonicalName(declaration)} needs an accessible no-arg constructor", property)
+            return null
+        }
+        return CustomValidatorSpec(className, declaration, CodeBlock.of("%T()", className))
+    }
+
+    private fun validatorTypeMatchesProperty(
+        declaration: KSClassDeclaration,
+        property: KSPropertyDeclaration,
+        resolver: Resolver,
+    ): Boolean {
+        val argument = findSupertypeTypeArgument(
+            declaration,
+            "io.github.mlmgames.settings.core.annotations.SettingValidator",
+            resolver,
+        ) ?: return false
+        val propertyType = property.type.resolve()
+        return !argument.isError && argument.isAssignableFrom(propertyType)
+    }
+
+    private fun findSupertypeTypeArgument(
+        declaration: KSClassDeclaration,
+        targetName: String,
+        resolver: Resolver,
+        seen: MutableSet<String> = mutableSetOf(),
+    ): KSType? {
+        val id = canonicalName(declaration)
+        if (!seen.add(id)) return null
+        for (reference in declaration.superTypes) {
+            val resolved = runCatching { reference.resolve() }.getOrNull() ?: continue
+            val qualifiedName = resolved.declaration.qualifiedName?.asString()
+            if (qualifiedName == targetName) {
+                return resolved.arguments.firstOrNull()?.type?.resolve()
+            }
+            val parent = resolved.declaration as? KSClassDeclaration ?: continue
+            val nested = findSupertypeTypeArgument(parent, targetName, resolver, seen) ?: continue
+            if (resolved.arguments.size < parent.typeParameters.size) return nested
+            return nested.replace(resolved.arguments)
+        }
+        return null
+    }
+
+    private fun hasAccessibleNoArgConstructor(declaration: KSClassDeclaration): Boolean {
+        val constructors = buildList<KSFunctionDeclaration> {
+            declaration.primaryConstructor?.let(::add)
+            addAll(
+                declaration.declarations
+                    .filterIsInstance<KSFunctionDeclaration>()
+                    .filter { it.simpleName.asString() == "<init>" },
+            )
+        }
+        return constructors.any { constructor ->
+            Modifier.PRIVATE !in constructor.modifiers &&
+                Modifier.PROTECTED !in constructor.modifiers &&
+                constructor.parameters.all { it.hasDefault }
+        }
+    }
+
+    private fun serializerTypeMatchesProperty(
+        declaration: KSClassDeclaration,
+        property: KSPropertyDeclaration,
+        resolver: Resolver,
+    ): Boolean {
+        val argument = findSupertypeTypeArgument(
+            declaration,
+            "io.github.mlmgames.settings.core.annotations.SettingSerializer",
+            resolver,
+        ) ?: return false
+        val propertyType = property.type.resolve().makeNotNullable()
+        return !argument.isError && argument.isAssignableFrom(propertyType)
+    }
+
+    private fun parseCustomSerializer(
+        property: KSPropertyDeclaration,
+        resolver: Resolver,
+        diagnostics: Diagnostics,
+    ): CustomSerializerSpec? {
+        val annotation = property.getAnnotation(SERIALIZED_WITH_ANNOTATION) ?: return null
+        val serializerType = annotation.argument("serializer")?.value as? KSType
+        if (serializerType == null || serializerType.isError) {
+            diagnostics.error("Cannot resolve @SerializedWith serializer for '${property.simpleName.asString()}'", property)
+            return null
+        }
+        val declaration = serializerType.declaration as? KSClassDeclaration
+        if (declaration == null) {
+            diagnostics.error("@SerializedWith must name a serializer class", property)
+            return null
+        }
+        if (declaration.typeParameters.isNotEmpty()) {
+            diagnostics.error("Generic @SerializedWith serializer classes are not supported ('${property.simpleName.asString()}')", property)
+            return null
+        }
+        if (Modifier.INNER in declaration.modifiers || Modifier.ABSTRACT in declaration.modifiers) {
+            diagnostics.error("@SerializedWith serializer must be a concrete top-level or nested class", property)
+            return null
+        }
+        if (!isAccessible(declaration) || hasInaccessibleParent(declaration) || hasGenericParent(declaration)) {
+            diagnostics.error("@SerializedWith serializer ${canonicalName(declaration)} must be public or internal", property)
+            return null
+        }
+        val className = serializerType.toClassNameOrNull()
+            ?: declaration.toClassNameCompat().also {
+                diagnostics.error("Cannot resolve serializer class for '${property.simpleName.asString()}'", property)
+            }
+        if (!serializerTypeMatchesProperty(declaration, property, resolver)) {
+            diagnostics.error(
+                "@SerializedWith type must match '${property.simpleName.asString()}' (${property.type.resolve()})",
+                property,
+            )
+            return null
+        }
+        if (declaration.classKind == ClassKind.OBJECT) {
+            return CustomSerializerSpec(className, declaration, CodeBlock.of("%T", className))
+        }
+        if (declaration.classKind != ClassKind.CLASS) {
+            diagnostics.error("@SerializedWith serializer ${canonicalName(declaration)} must be an object or a class", property)
+            return null
+        }
+        if (!hasAccessibleNoArgConstructor(declaration)) {
+            diagnostics.error("@SerializedWith serializer ${canonicalName(declaration)} needs an accessible no-arg constructor", property)
+            return null
+        }
+        return CustomSerializerSpec(className, declaration, CodeBlock.of("%T()", className))
+    }
+
+    private fun parseSettingConfig(
+        property: KSPropertyDeclaration,
+        resolver: Resolver,
+        diagnostics: Diagnostics,
+    ): SettingConfig? {
+        val propertyName = property.simpleName.asString()
+        val annotation = property.getAnnotation(SETTING_ANNOTATION) ?: return null
+        val categoryType = annotation.argument("category")?.value as? KSType
+        val categoryDeclaration = categoryType?.declaration as? KSClassDeclaration
+        if (categoryType == null || categoryDeclaration == null) {
+            diagnostics.error("Missing or invalid category for '$propertyName'", property)
+            return null
+        }
+        if (categoryDeclaration.classKind != ClassKind.OBJECT) {
+            diagnostics.error("Category for '$propertyName' must be an object", property)
+        }
+        if (!isAccessible(categoryDeclaration)) {
+            diagnostics.error("Category ${canonicalName(categoryDeclaration)} must be public or internal", property)
+        }
+        val categoryAnnotation = categoryDeclaration.getAnnotation(CATEGORY_DEF_ANNOTATION)
+        if (categoryAnnotation == null) {
+            diagnostics.error("Category ${categoryDeclaration.simpleName.asString()} lacks @CategoryDefinition", property)
+        }
+        val categoryTitleRes = categoryAnnotation?.argument("titleRes")?.intValue() ?: 0
+        if (categoryTitleRes < 0) diagnostics.error("Category titleRes must not be negative ('$propertyName')", property)
+        val categoryOrder = categoryAnnotation?.argument("order")?.intValue() ?: 0
+        val categoryClass = categoryType.toClassNameOrNull()
+        if (categoryClass == null) {
+            diagnostics.error("Cannot resolve category for '$propertyName'", property)
+            return null
+        }
+
+        val typeType = annotation.argument("type")?.value as? KSType
+        val typeClass = typeType?.toClassNameOrNull()
+            ?: ClassName(typesPackage, "Toggle")
+        val uiKind = uiKind(typeClass)
+        val title = annotation.argument("title")?.stringValue() ?: ""
+        val description = annotation.argument("description")?.stringValue() ?: ""
+        val titleRes = annotation.argument("titleRes")?.intValue() ?: 0
+        val descriptionRes = annotation.argument("descriptionRes")?.intValue() ?: 0
+        val key = keyFor(property, AnnotationKind.SETTING)
+        val dependsOn = annotation.argument("dependsOn")?.stringValue() ?: ""
+        val min = annotation.argument("min")?.floatValue() ?: 0f
+        val max = annotation.argument("max")?.floatValue() ?: 100f
+        val step = annotation.argument("step")?.floatValue() ?: 1f
+        val options = stringListArgument(annotation, "options", diagnostics, propertyName)
+        val optionsRes = annotation.argument("optionsRes")?.intValue() ?: 0
+        if (titleRes < 0 || descriptionRes < 0 || optionsRes < 0) {
+            diagnostics.error("Resource IDs must not be negative ('$propertyName')", property)
+        }
+        val platforms = platformListArgument(annotation, propertyName, diagnostics)
+        val actionClass = parseActionClass(property, diagnostics)
+        val validationMessage = parseValidationMessage(property, diagnostics)
+        return SettingConfig(
+            title = title,
+            description = description,
+            titleRes = titleRes,
+            descriptionRes = descriptionRes,
+            categoryClass = categoryClass,
+            categoryOrder = categoryOrder,
+            categoryTitleRes = categoryTitleRes,
+            typeClass = typeClass,
+            uiKind = uiKind,
+            key = key,
+            dependsOn = dependsOn,
+            min = min,
+            max = max,
+            step = step,
+            options = options,
+            optionsRes = optionsRes,
+            actionClass = actionClass,
+            platforms = platforms,
+            validationMessage = validationMessage,
+        )
+    }
+
+    private fun parseActionClass(property: KSPropertyDeclaration, diagnostics: Diagnostics): ClassName? {
+        val annotation = property.getAnnotation(ACTION_HANDLER_ANNOTATION) ?: return null
+        val actionType = annotation.argument("action")?.value as? KSType
+        val declaration = actionType?.declaration as? KSClassDeclaration
+        if (actionType == null || declaration == null) {
+            diagnostics.error("Cannot resolve @ActionHandler for '${property.simpleName.asString()}'", property)
+            return null
+        }
+        if (!isAccessible(declaration)) {
+            diagnostics.error("@ActionHandler class ${canonicalName(declaration)} must be public or internal", property)
+        }
+        return actionType.toClassNameOrNull()
+    }
+
+    private fun parseValidationMessage(property: KSPropertyDeclaration, diagnostics: Diagnostics): ValidationMessage? {
+        val messages = mutableListOf<ValidationMessage>()
+        for (annotationName in listOf(RANGE_ANNOTATION, LENGTH_ANNOTATION, PATTERN_ANNOTATION, REQUIRED_ANNOTATION)) {
+            val annotation = property.getAnnotation(annotationName) ?: continue
+            val message = annotation.argument("errorMessage")?.stringValue() ?: defaultValidationMessage(annotationName)
+            val resource = annotation.argument("errorMessageRes")?.intValue() ?: 0
+            if (resource < 0) diagnostics.error("Validation errorMessageRes must not be negative ('${property.simpleName.asString()}')", property)
+            messages += ValidationMessage(message, resource)
+        }
+        val distinct = messages.distinct()
+        if (distinct.size > 1) {
+            diagnostics.error(
+                "ValidationRules exposes one errorMessage/errorMessageRes pair; use the same message for every rule on '${property.simpleName.asString()}'",
+                property,
+            )
+        }
+        return distinct.firstOrNull()
+    }
+
+    private fun defaultValidationMessage(annotationName: String): String = when (annotationName) {
+        RANGE_ANNOTATION -> "Value out of range"
+        LENGTH_ANNOTATION -> "Invalid length"
+        PATTERN_ANNOTATION -> "Invalid format"
+        else -> "This field is required"
+    }
+
+    private fun validateSetting(
+        property: KSPropertyDeclaration,
+        plan: FieldPlan,
+        config: SettingConfig,
+        resolver: Resolver,
+        diagnostics: Diagnostics,
+    ) {
+        val name = property.simpleName.asString()
+        if (!config.min.isFinite() || !config.max.isFinite() || !config.step.isFinite()) {
+            diagnostics.error("@Setting min, max, and step must be finite ('$name')", property)
+        }
+        if (config.min >= config.max) {
+            diagnostics.error("@Setting min (${config.min}) must be < max (${config.max}): $name", property)
+        }
+        if (!(config.step > 0f) || config.step.isNaN()) {
+            diagnostics.error("@Setting step (${config.step}) must be > 0: $name", property)
+        }
+        if (!(config.max - config.min).isFinite()) {
+            diagnostics.error("@Setting slider range is too large or non-finite ('$name')", property)
+        }
+
+        validateUiCompatibility(property, plan, config, diagnostics)
+        validateSettingValidationAnnotations(property, plan, diagnostics)
+        validateResetAndConfirmation(property, diagnostics)
+
+        if (config.uiKind == UiKind.DROPDOWN) {
+            val baseName = plan.baseType.declaration.qualifiedName?.asString()
+            if (baseName in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double", "kotlin.String")) {
+                if (config.options.isEmpty() && config.optionsRes == 0) {
+                    diagnostics.error("Dropdown '$name' needs options= or optionsRes=", property)
+                }
+                if (config.options.isEmpty() && config.optionsRes == 0) {
+                    diagnostics.error("Dropdown '$name' needs options= or optionsRes=", property)
+                }
+            }
+            if (isEnumType(plan.baseType)) {
+                val count = (plan.baseType.declaration as? KSClassDeclaration)
+                    ?.declarations
+                    ?.filterIsInstance<KSClassDeclaration>()
+                    ?.count { it.classKind == ClassKind.ENUM_ENTRY }
+                    ?: -1
+                if (count >= 0 && config.options.isNotEmpty() && config.options.size != count) {
+                    diagnostics.error(
+                        "Dropdown options for enum '$name' must align by index with entries (${config.options.size} labels vs $count entries)",
+                        property,
+                    )
+                }
+            }
+        }
+
+        if (config.uiKind == UiKind.BUTTON && config.actionClass == null) {
+            diagnostics.error("Button '$name' requires @ActionHandler", property)
+        }
+        if (config.uiKind != UiKind.BUTTON && config.actionClass != null) {
+            diagnostics.error("@ActionHandler is only valid on Button type ('$name')", property)
+        }
+    }
+
+    private fun validateUiCompatibility(
+        property: KSPropertyDeclaration,
+        plan: FieldPlan,
+        config: SettingConfig,
+        diagnostics: Diagnostics,
+    ) {
+        val name = property.simpleName.asString()
+        val typeName = plan.baseType.declaration.qualifiedName?.asString()
+        val serialized = plan.kind == FieldKind.SERIALIZED
+        when (config.uiKind) {
+            UiKind.TOGGLE -> {
+                if (typeName != "kotlin.Boolean" || serialized) {
+                    diagnostics.error("Toggle '$name' requires a Boolean backed by a primitive field", property)
+                }
+            }
+
+            UiKind.SLIDER -> {
+                if (typeName !in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double") || serialized) {
+                    diagnostics.error("Slider '$name' requires a numeric primitive field", property)
+                }
+            }
+
+            UiKind.DROPDOWN -> {
+                if (isEnumType(plan.baseType)) {
+                    if (serialized) {
+                        diagnostics.error("Dropdown enum '$name' cannot use serialized storage without a custom UI handler", property)
+                    }
+                } else if (typeName !in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double", "kotlin.String") || serialized) {
+                    diagnostics.error("Dropdown '$name' requires a numeric, String, or enum field", property)
+                }
+            }
+
+            UiKind.TEXT_INPUT -> {
+                if (typeName != "kotlin.String" || serialized) {
+                    diagnostics.error("TextInput '$name' requires a String backed by the native string field", property)
+                }
+            }
+
+            UiKind.TIME_PICKER -> {
+                if (typeName != "kotlin.Int" || serialized) {
+                    diagnostics.error("TimePickerType '$name' requires an Int", property)
+                }
+            }
+
+            UiKind.BUTTON -> {
+                if (typeName != "kotlin.Unit" || plan.nullable || serialized) {
+                    diagnostics.error("Button '$name' must be backed by non-null Unit", property)
+                }
+            }
+
+            UiKind.CUSTOM -> Unit
+        }
+    }
+
+    private fun validateSettingValidationAnnotations(
+        property: KSPropertyDeclaration,
+        plan: FieldPlan,
+        diagnostics: Diagnostics,
+    ) {
+        val name = property.simpleName.asString()
+        val typeName = plan.baseType.declaration.qualifiedName?.asString()
+        val numeric = typeName in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double")
+        val string = typeName == "kotlin.String"
+        if (property.hasAnnotation(RANGE_ANNOTATION) && !numeric) {
+            diagnostics.error("@Range applies to numeric types only ('$name' is ${typeName ?: "unknown"})", property)
+        }
+        if (property.hasAnnotation(LENGTH_ANNOTATION) && !string) {
+            diagnostics.error("@Length applies to String only ('$name' is ${typeName ?: "unknown"})", property)
+        }
+        if (property.hasAnnotation(PATTERN_ANNOTATION) && !string) {
+            diagnostics.error("@Pattern applies to String only ('$name' is ${typeName ?: "unknown"})", property)
+        }
+        if (property.hasAnnotation(REQUIRED_ANNOTATION) && typeName == "kotlin.Unit") {
+            diagnostics.error("@Required cannot be used on Unit/Button '$name'", property)
+        }
+        validateRuleBounds(property, diagnostics)
+    }
+
+    private fun validateRuleBounds(property: KSPropertyDeclaration, diagnostics: Diagnostics) {
+        val name = property.simpleName.asString()
+        property.getAnnotation(RANGE_ANNOTATION)?.let { annotation ->
+            val min = annotation.argument("min")?.doubleValue() ?: -Double.MAX_VALUE
+            val max = annotation.argument("max")?.doubleValue() ?: Double.MAX_VALUE
+            if (!min.isFinite() || !max.isFinite()) {
+                diagnostics.error("@Range bounds must be finite ('$name')", property)
+            }
+            if (min > max) {
+                diagnostics.error("@Range min ($min) must be <= max ($max): $name", property)
+            }
+        }
+        property.getAnnotation(LENGTH_ANNOTATION)?.let { annotation ->
+            val min = annotation.argument("min")?.intValue() ?: 0
+            val max = annotation.argument("max")?.intValue() ?: Int.MAX_VALUE
+            if (min < 0 || max < 0 || min > max) {
+                diagnostics.error("@Length requires 0 <= min <= max ('$name')", property)
+            }
+        }
+        property.getAnnotation(PATTERN_ANNOTATION)?.let { annotation ->
+            val regex = annotation.argument("regex")?.stringValue() ?: ""
+            runCatching { Regex(regex) }.onFailure {
+                diagnostics.error("Invalid @Pattern regex for '$name': ${it.message}", property)
+            }
+        }
+    }
+
+    private fun validateResetAndConfirmation(property: KSPropertyDeclaration, diagnostics: Diagnostics) {
+        val name = property.simpleName.asString()
+        if (property.hasAnnotation(NO_RESET_ANNOTATION) && property.hasAnnotation(CONFIRM_RESET_ANNOTATION)) {
+            diagnostics.error("@NoReset and @ConfirmReset cannot be combined ('$name')", property)
+        }
+        if (property.hasAnnotation(REQUIRES_CONFIRMATION_ANNOTATION)) {
+            val annotation = property.getAnnotation(REQUIRES_CONFIRMATION_ANNOTATION)!!
+            val resources = listOf("titleRes", "messageRes", "confirmTextRes", "cancelTextRes")
+            for (resource in resources) {
+                val value = annotation.argument(resource)?.intValue() ?: 0
+                if (value < 0) diagnostics.error("Confirmation resource IDs must not be negative ('$name')", property)
+            }
+        }
+    }
+
+    private fun validatePersisted(property: KSPropertyDeclaration, diagnostics: Diagnostics) {
+        val name = property.simpleName.asString()
+        val ignored = listOf(
+            RANGE_ANNOTATION,
+            LENGTH_ANNOTATION,
+            PATTERN_ANNOTATION,
+            REQUIRED_ANNOTATION,
+            VALIDATED_BY_ANNOTATION,
+            ACTION_HANDLER_ANNOTATION,
+            REQUIRES_CONFIRMATION_ANNOTATION,
+        )
+        for (annotation in ignored) {
+            if (property.hasAnnotation(annotation)) {
+                val shortName = annotation.substringAfterLast('.')
+                val message = if (annotation == NO_RESET_ANNOTATION || annotation == CONFIRM_RESET_ANNOTATION) {
+                    "$shortName on @Persisted '$name' cannot be represented without UI metadata; move it to @Setting"
+                } else {
+                    "$shortName on @Persisted '$name' is not supported; move it to @Setting"
+                }
+                diagnostics.error(message, property)
+            }
+        }
+    }
+
+    private fun validateDependencies(properties: List<KSPropertyDeclaration>, diagnostics: Diagnostics) {
+        val byName = properties.associateBy { it.simpleName.asString() }
         val edges = mutableMapOf<String, String>()
-        for (prop in allProps) {
-            val propName = prop.simpleName.asString()
-            val settingAnn = prop.annotations.firstOrNull {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == SETTING_ANNOTATION
-            } ?: continue
-            val dependsOn = settingAnn.arguments
-                .firstOrNull { it.name?.asString() == "dependsOn" }?.value as? String ?: ""
-            if (dependsOn.isBlank()) continue
-            if (dependsOn == propName) {
-                logger.error("dependsOn must not reference itself: '$propName'", prop)
+        for (property in properties) {
+            val name = property.simpleName.asString()
+            val setting = property.getAnnotation(SETTING_ANNOTATION) ?: continue
+            val dependency = setting.argument("dependsOn")?.stringValue() ?: ""
+            if (dependency.isBlank()) continue
+            if (dependency == name) {
+                diagnostics.error("dependsOn must not reference itself: '$name'", property)
                 continue
             }
-            if (dependsOn !in names) {
-                logger.error("dependsOn='$dependsOn' does not match any property (field '$propName')", prop)
+            if (dependency !in byName) {
+                diagnostics.error("dependsOn='$dependency' does not name a property (field '$name')", property)
                 continue
             }
-            edges[propName] = dependsOn
+            edges[name] = dependency
         }
-        // Cycle detection (iterative, no recursion).
         for (start in edges.keys) {
             val seen = mutableSetOf<String>()
             var cursor: String? = start
             while (cursor != null && edges.containsKey(cursor)) {
                 if (!seen.add(cursor)) {
-                    logger.error("Cyclic dependsOn chain involving '$start'", allProps.first { it.simpleName.asString() == start })
+                    diagnostics.error("Cyclic dependsOn chain involving '$start'", byName[start])
                     break
                 }
                 cursor = edges[cursor]
@@ -319,609 +1230,515 @@ class SettingsProcessor(
         }
     }
 
-    private fun validateSettingProp(
-        prop: KSPropertyDeclaration,
-        propByName: Map<String, KSPropertyDeclaration>,
-        resolver: Resolver,
+    private fun validateRenames(
+        metadata: Map<String, FieldMetadata>,
+        plans: List<FieldPlan>,
+        schemaVersion: Int,
+        hasSchemaVersion: Boolean,
+        diagnostics: Diagnostics,
     ) {
-        val propName = prop.simpleName.asString()
-        val propType = prop.type.resolve()
-        val baseType = propType.makeNotNullable()
-
-        val ann = prop.annotations.first {
-            it.annotationType.resolve().declaration.qualifiedName?.asString() == SETTING_ANNOTATION
-        }
-        val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-        val min = args["min"]?.value as? Float ?: 0f
-        val max = args["max"]?.value as? Float ?: 100f
-        val step = args["step"]?.value as? Float ?: 1f
-        val options = (args["options"]?.value as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-        val typeType = args["type"]?.value as? KSType
-        val typeName = try {
-            typeType?.toClassName()?.simpleName
-        } catch (e: Exception) { null } ?: "Toggle"
-
-        if (min >= max) {
-            logger.error("@Setting min ($min) must be < max ($max): $propName", prop)
-        }
-        if (!(step > 0f) || step.isNaN()) {
-            logger.error("@Setting step ($step) must be > 0: $propName", prop)
-        }
-        if (typeName == "TimePickerType") {
-            val propTypeName = baseType.declaration.qualifiedName?.asString()
-            if (propTypeName != "kotlin.Int") {
-                logger.error("TimePickerType settings must use Int (minutes from midnight): $propName", prop)
+        val byName = plans.associateBy { it.propertyName }
+        val previousOwners = mutableMapOf<String, String>()
+        metadata.forEach { (fieldName, details) ->
+            val property = byName[fieldName]?.property
+            val hasLifecycle = details.renamedFrom != null || details.addedInVersion != null || details.removeInVersion != null
+            if (hasLifecycle && !hasSchemaVersion) {
+                diagnostics.error("@SchemaVersion is required when lifecycle annotations are used ('$fieldName')", property)
             }
-        } else if (typeName == "Dropdown") {
-            val isEnum = (baseType.declaration as? KSClassDeclaration)?.classKind == ClassKind.ENUM_CLASS
-            if (!isEnum && options.isEmpty()) {
-                val optionsRes = args["optionsRes"]?.value as? Int ?: 0
-                if (optionsRes == 0) {
-                    logger.error("Dropdown '$propName' needs options= or optionsRes=", prop)
+            if (details.addedInVersion != null && details.addedInVersion > schemaVersion) {
+                diagnostics.error("@AddedInVersion exceeds @SchemaVersion ('$fieldName')", property)
+            }
+            if (details.removeInVersion != null && details.removeInVersion < schemaVersion) {
+                diagnostics.error("@DeprecatedSetting removeInVersion is already reached ('$fieldName')", property)
+            }
+            val previousKey = details.renamedFrom ?: return@forEach
+            if (previousKey in RESERVED_KEYS || previousKey.startsWith(UNKNOWN_BACKUP_PREFIX) || previousKey.startsWith("__kmp_settings_v2__:")) {
+                diagnostics.error("@RenamedFrom key '$previousKey' is reserved", property)
+            }
+            val previousOwner = previousOwners.putIfAbsent(previousKey, fieldName)
+            if (previousOwner != null) {
+                diagnostics.error("Duplicate @RenamedFrom key '$previousKey' (fields '$previousOwner' and '$fieldName')", property)
+            }
+            val plan = byName[fieldName] ?: return@forEach
+            val oldAliases = physicalKeysFor(
+                key = previousKey,
+                kind = plan.kind,
+                baseName = plan.baseType.declaration.qualifiedName?.asString(),
+                nullable = plan.nullable,
+                fieldClass = plan.fieldClass,
+            ).toSet()
+            val conflict = plans.firstOrNull { other ->
+                other.propertyName != fieldName && oldAliases.any { it in other.physicalKeys }
+            }
+            if (conflict != null) {
+                diagnostics.error(
+                    "@RenamedFrom physical alias '$previousKey' collides with field '${conflict.propertyName}'",
+                    property,
+                )
+            }
+            if (details.renamedSinceVersion != null && details.renamedSinceVersion > schemaVersion) {
+                diagnostics.error("@RenamedFrom sinceVersion exceeds @SchemaVersion ('$fieldName')", property)
+            }
+        }
+    }
+
+    private fun validateKeys(plans: List<FieldPlan>, diagnostics: Diagnostics) {
+        val logicalOwners = mutableMapOf<String, String>()
+        val physicalOwners = mutableMapOf<String, String>()
+        for (plan in plans) {
+            val propertyName = plan.propertyName
+            val key = plan.logicalKey
+            if (key.isBlank() || key != key.trim()) {
+                diagnostics.error("Persistence key '$key' must not be blank or contain surrounding whitespace ('$propertyName')", plan.property)
+            }
+            if (key in RESERVED_KEYS || key.startsWith(UNKNOWN_BACKUP_PREFIX) || key.startsWith("__kmp_settings_v2__:")) {
+                diagnostics.error("Persistence key '$key' is reserved by the settings runtime ('$propertyName')", plan.property)
+            }
+            val previousLogical = logicalOwners.putIfAbsent(key, propertyName)
+            if (previousLogical != null) {
+                diagnostics.error(
+                    "Duplicate persistence key '$key' (properties '$previousLogical' and '$propertyName')",
+                    plan.property,
+                )
+            }
+            for (physical in plan.physicalKeys) {
+                if (physical in RESERVED_KEYS || physical.startsWith(UNKNOWN_BACKUP_PREFIX)) {
+                    diagnostics.error("Physical persistence key '$physical' is reserved ('$propertyName')", plan.property)
                 }
-            }
-            if (isEnum && options.isNotEmpty()) {
-                val entryCount = (baseType.declaration as? KSClassDeclaration)
-                    ?.declarations?.filterIsInstance<KSClassDeclaration>()
-                    ?.count { it.classKind == ClassKind.ENUM_ENTRY } ?: -1
-                if (entryCount >= 0 && options.size != entryCount) {
-                    logger.error(
-                        "Dropdown options= on enum '$propName' must align by index with entries (${options.size} labels vs $entryCount entries); mismatched lists display the wrong label",
-                        prop
+                val previousPhysical = physicalOwners.putIfAbsent(physical, propertyName)
+                if (previousPhysical != null) {
+                    diagnostics.error(
+                        "Physical persistence key collision '$physical' (properties '$previousPhysical' and '$propertyName')",
+                        plan.property,
                     )
                 }
             }
         }
-        val isButton = typeName == "Button"
-        val hasAction = prop.hasAnnotation(ACTION_HANDLER_ANNOTATION)
-        if (isButton && !hasAction) {
-            logger.error("Button '$propName' requires @ActionHandler", prop)
-        }
-        if (!isButton && hasAction) {
-            logger.error("@ActionHandler is only valid on Button type (field '$propName')", prop)
-        }
-        if (isButton && baseType.declaration.qualifiedName?.asString() != "kotlin.Unit") {
-            logger.error("Button '$propName' must be backed by Unit", prop)
-        }
-        if (baseType.declaration.qualifiedName?.asString() == "kotlin.Unit" && !isButton) {
-            logger.error("Unit '$propName' must use Button type", prop)
-        }
-
-        // Validation applicability: @Range on numbers only, @Length/@Pattern on
-        // String only, and range bounds ordered.
-        val qname = baseType.declaration.qualifiedName?.asString()
-        val isString = qname == "kotlin.String"
-        if (prop.hasAnnotation(RANGE_ANNOTATION) && !(qname in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double"))) {
-            logger.error("@Range applies to numeric types only (field '$propName' is $qname)", prop)
-        }
-        if (prop.hasAnnotation(LENGTH_ANNOTATION) && !isString) {
-            logger.error("@Length applies to String only (field '$propName' is $qname)", prop)
-        }
-        if (prop.hasAnnotation(PATTERN_ANNOTATION) && !isString) {
-            logger.error("@Pattern applies to String only (field '$propName' is $qname)", prop)
-        }
-        if (prop.hasAnnotation(RANGE_ANNOTATION)) {
-            val rangeAnn = prop.getAnnotation(RANGE_ANNOTATION)!!
-            val rArgs = rangeAnn.arguments.associateBy { it.name?.asString().orEmpty() }
-            val rMin = rArgs["min"]?.value as? Double ?: -Double.MAX_VALUE
-            val rMax = rArgs["max"]?.value as? Double ?: Double.MAX_VALUE
-            if (rMin > rMax) {
-                logger.error("@Range min ($rMin) must be <= max ($rMax): $propName", prop)
-            }
-        }
-        if (prop.hasAnnotation(PATTERN_ANNOTATION)) {
-            val regex = prop.getAnnotation(PATTERN_ANNOTATION)!!
-                .arguments.firstOrNull { it.name?.asString() == "regex" }?.value as? String ?: ""
-            try {
-                Regex(regex)
-            } catch (e: Exception) {
-                logger.error("Invalid @Pattern regex for '$propName': ${e.message}", prop)
-            }
-        }
-
-        // @SerializedWith requires @Serialized; @Serialized on a non-serializable
-        // type without a custom serializer is a compile error later — fail here.
-        if (prop.hasAnnotation(SERIALIZED_WITH_ANNOTATION) && !prop.hasAnnotation(SERIALIZED_ANNOTATION)) {
-            logger.error("@SerializedWith requires @Serialized on '$propName'", prop)
-        }
-
-        // @ValidatedBy support is not implemented at runtime; fail loudly instead
-        // of silently dropping the validator.
-        if (prop.hasAnnotation(VALIDATED_BY_ANNOTATION)) {
-            logger.error("@ValidatedBy is not supported yet (field '$propName'); remove it or implement runtime support", prop)
-        }
-
-        // Visibility: property must be a primary-constructor val accessible from
-        // generated code (public/internal, non-private), otherwise copy()/getter
-        // references won't compile.
-        val containing = prop.parentDeclaration as? KSClassDeclaration
-        val inPrimaryCtor = containing?.primaryConstructor
-            ?.parameters?.any { it.name?.asString() == propName } == true
-        if (!inPrimaryCtor) {
-            logger.error("'$propName' must be a primary-constructor property for copy() codegen", prop)
-        }
-        if (Modifier.PRIVATE in prop.modifiers || Modifier.PROTECTED in prop.modifiers) {
-            logger.error("'$propName' must not be private/protected (generated schema cannot access it)", prop)
-        }
-        validateCategory(prop, args)
     }
 
-    private fun validatePersistedProp(prop: KSPropertyDeclaration, resolver: Resolver) {
-        val propName = prop.simpleName.asString()
-        for (fqcn in listOf(RANGE_ANNOTATION, LENGTH_ANNOTATION, PATTERN_ANNOTATION, REQUIRED_ANNOTATION, VALIDATED_BY_ANNOTATION)) {
-            if (prop.hasAnnotation(fqcn)) {
-                logger.error("${fqcn.substringAfterLast('.')} on @Persisted '$propName' is ignored; move it to @Setting", prop)
+    private fun validateGeneratedTypeReferences(
+        plans: List<FieldPlan>,
+        diagnostics: Diagnostics,
+    ) {
+        val references = mutableMapOf<String, KSDeclaration>()
+        fun register(declaration: KSDeclaration, symbol: KSNode) {
+            val name = canonicalName(declaration)
+            val previous = references.putIfAbsent(name, declaration)
+            if (previous != null && previous.qualifiedName?.asString() != declaration.qualifiedName?.asString()) {
+                diagnostics.error("Type canonical name collision for '$name'", symbol)
             }
         }
-        if (prop.hasAnnotation(REQUIRES_CONFIRMATION_ANNOTATION)) {
-            logger.error("@RequiresConfirmation on @Persisted '$propName' is ignored; move it to @Setting", prop)
+        for (plan in plans) {
+            register(plan.baseType.declaration, plan.property)
+            plan.serializer?.let { register(it.declaration, plan.property) }
         }
     }
 
-    private fun validateCategory(prop: KSPropertyDeclaration, args: Map<String, KSValueArgument>) {
-        val propName = prop.simpleName.asString()
-        val categoryType = args["category"]?.value as? KSType ?: run {
-            logger.error("Missing category for $propName", prop)
-            return
-        }
-        val categoryDecl = categoryType.declaration as? KSClassDeclaration
-        if (categoryDecl == null) {
-            logger.error("category for '$propName' must be an object", prop)
-            return
-        }
-        if (categoryDecl.classKind != ClassKind.OBJECT) {
-            logger.error("category for '$propName' must be an object (${categoryDecl.simpleName.asString()})", prop)
-        }
-        if (!categoryDecl.annotations.any {
-                it.annotationType.resolve().declaration.qualifiedName?.asString() == CATEGORY_DEF_ANNOTATION
-            }
-        ) {
-            logger.error("category ${categoryDecl.simpleName.asString()} lacks @CategoryDefinition", prop)
-        }
+    private fun parseSchemaVersion(klass: KSClassDeclaration, diagnostics: Diagnostics): Int {
+        val annotation = klass.getAnnotation(SCHEMA_VERSION_ANNOTATION) ?: return 0
+        val version = annotation.argument("version")?.intValue() ?: 0
+        if (version < 0) diagnostics.error("@SchemaVersion version must not be negative", klass)
+        return version
     }
 
-    private fun generateSettingField(
-        prop: KSPropertyDeclaration,
-        modelClass: ClassName,
+    private fun parseMetadata(
+        property: KSPropertyDeclaration,
+        plan: FieldPlan?,
+        diagnostics: Diagnostics,
+    ): FieldMetadata {
+        val name = property.simpleName.asString()
+        val renamed = property.getAnnotation(RENAMED_FROM_ANNOTATION)
+        val added = property.getAnnotation(ADDED_IN_VERSION_ANNOTATION)
+        val deprecated = property.getAnnotation(DEPRECATED_SETTING_ANNOTATION)
+        val previousKey = renamed?.argument("previousKey")?.stringValue()
+        val renamedSince = renamed?.argument("sinceVersion")?.intValue()
+        val addedVersion = added?.argument("version")?.intValue()
+        val removeVersion = deprecated?.argument("removeInVersion")?.intValue()
+        val deprecationMessage = deprecated?.argument("message")?.stringValue()
+        if (previousKey != null) {
+            if (previousKey.isBlank() || previousKey != previousKey.trim()) {
+                diagnostics.error("@RenamedFrom previousKey must not be blank or padded ('$name')", property)
+            }
+            if (plan != null && previousKey == plan.logicalKey) {
+                diagnostics.error("@RenamedFrom previousKey must differ from the current key ('$name')", property)
+            }
+        }
+        if (renamedSince != null && renamedSince < 1) {
+            diagnostics.error("@RenamedFrom sinceVersion must be >= 1 ('$name')", property)
+        }
+        if (addedVersion != null && addedVersion < 1) {
+            diagnostics.error("@AddedInVersion version must be >= 1 ('$name')", property)
+        }
+        if (removeVersion != null && removeVersion < 1) {
+            diagnostics.error("@DeprecatedSetting removeInVersion must be >= 1 ('$name')", property)
+        }
+        if (addedVersion != null && removeVersion != null && removeVersion <= addedVersion) {
+            diagnostics.error("@DeprecatedSetting removeInVersion must be greater than @AddedInVersion ('$name')", property)
+        }
+        return FieldMetadata(
+            renamedFrom = previousKey,
+            renamedSinceVersion = renamedSince,
+            addedInVersion = addedVersion,
+            deprecated = deprecated != null,
+            deprecationMessage = deprecationMessage,
+            removeInVersion = removeVersion,
+        )
+    }
+
+    private fun generateSchema(
+        klass: KSClassDeclaration,
+        properties: List<KSPropertyDeclaration>,
+        analysis: ClassAnalysis,
+        schemaName: String,
         resolver: Resolver,
-    ): CodeBlock? {
-        val propName = prop.simpleName.asString()
-        val propType = prop.type.resolve()
+    ) {
+        val packageName = klass.packageName.asString()
+        val modelClass = klass.toClassName()
+        val objectBuilder = TypeSpec.objectBuilder(schemaName)
+            .addSuperinterface(settingsSchema.parameterizedBy(modelClass))
+        if (effectiveVisibility(klass) == Modifier.INTERNAL) objectBuilder.addModifiers(KModifier.INTERNAL)
 
-        val ann = prop.annotations.first {
-            it.annotationType.resolve().declaration.qualifiedName?.asString() == SETTING_ANNOTATION
-        }
-        val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-
-        val hasSerialized = prop.hasAnnotation(SERIALIZED_ANNOTATION)
-
-        // Extract annotation values
-        val title = args["title"]?.value as? String ?: ""
-        val description = args["description"]?.value as? String ?: ""
-        val titleRes = args["titleRes"]?.value as? Int ?: 0
-        val descriptionRes = args["descriptionRes"]?.value as? Int ?: 0
-        val keyOverride = args["key"]?.value as? String ?: ""
-        val dependsOn = args["dependsOn"]?.value as? String ?: ""
-        val min = args["min"]?.value as? Float ?: 0f
-        val max = args["max"]?.value as? Float ?: 100f
-        val step = args["step"]?.value as? Float ?: 1f
-        val options = (args["options"]?.value as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-        val optionsRes = args["optionsRes"]?.value as? Int ?: 0
-
-        val categoryType = args["category"]?.value as? KSType
-        val categoryClass = categoryType?.toClassName()
-            ?: return null.also { logger.error("Missing category for $propName", prop) }
-
-        // Re-validate category here so generateSettingField is safe standalone.
-        validateCategory(prop, args)
-        val categoryOrder = getCategoryOrder(categoryType)
-
-        val typeType = args["type"]?.value as? KSType
-        val typeClass = typeType?.toClassName()
-            ?: ClassName("io.github.mlmgames.settings.core.types", "Toggle")
-
-        // Validate TimePickerType by qualified name (simpleName matching
-        // false-positives on same-named custom types). Skip the field after
-        // logging so broken config never generates a mismatched field.
-        if (typeClass.canonicalName == "io.github.mlmgames.settings.core.types.TimePickerType") {
-            val propTypeName = propType.makeNotNullable().declaration.qualifiedName?.asString()
-            if (propTypeName != "kotlin.Int") {
-                logger.error("TimePickerType settings must use Int (minutes from midnight): $propName", prop)
-                return null
-            }
-        }
-
-        val keyName = keyOverride.ifBlank { toSnakeCase(propName) }
-
-        // Determine value kind based on property type
-        val (valueKindName, enumTypeName) = computeValueKindInfo(propType, resolver)
-
-        // Action handler
-        val actionClass = getActionClass(prop)
-
-        // Validation
-        val validationBlock = buildValidationBlock(prop)
-
-        // Confirmation
-        val confirmationBlock = buildConfirmationBlock(prop)
-
-        // Reset behavior
-        val noReset = prop.hasAnnotation(NO_RESET_ANNOTATION)
-        val confirmReset = getConfirmResetMessage(prop)
-
-        val platformNames = extractPlatformNames(args["platforms"], propName)
-
-        val metaBlock = buildMetaBlock(
-            title,
-            description,
-            titleRes,
-            descriptionRes,
-            categoryClass,
-            categoryOrder,
-            typeClass,
-            keyName,
-            dependsOn,
-            min,
-            max,
-            step,
-            options,
-            optionsRes,
-            actionClass,
-            validationBlock,
-            confirmationBlock,
-            noReset,
-            confirmReset,
-            platformNames,
-            valueKindName,
-            enumTypeName
+        objectBuilder.addProperty(
+            PropertySpec.builder("default", modelClass)
+                .addModifiers(KModifier.OVERRIDE)
+                .initializer("%T()", modelClass)
+                .build(),
         )
 
-        return generateFieldCode(prop, propType, modelClass, propName, keyName, metaBlock, hasSerialized, resolver)
+        val fieldsCode = CodeBlock.builder().add("listOf(\n").indent()
+        for (plan in analysis.plans) {
+            val config = analysis.settingConfigs[plan.propertyName]
+            fieldsCode.add("%L,\n", generateFieldCode(plan, config, modelClass, klass, schemaName, resolver))
+        }
+        fieldsCode.unindent().add(")")
+        objectBuilder.addProperty(
+            PropertySpec.builder(
+                "fields",
+                ClassName("kotlin.collections", "List").parameterizedBy(
+                    settingField.parameterizedBy(modelClass, com.squareup.kotlinpoet.STAR),
+                ),
+            )
+                .addModifiers(KModifier.OVERRIDE)
+                .initializer(fieldsCode.build())
+                .build(),
+        )
+
+        objectBuilder.addProperty(
+            PropertySpec.builder("schemaVersion", ClassName("kotlin", "Int"))
+                .addModifiers(KModifier.OVERRIDE)
+                .initializer("%L", analysis.schemaVersion)
+                .build(),
+        )
+        objectBuilder.addProperty(
+            PropertySpec.builder(
+                "fieldMetadata",
+                ClassName("kotlin.collections", "Map").parameterizedBy(
+                    ClassName("kotlin", "String"),
+                    schemaFieldMetadataClass,
+                ),
+            ).addModifiers(KModifier.OVERRIDE)
+                .initializer(buildFieldMetadata(analysis)).build(),
+        )
+        objectBuilder.addProperty(
+            PropertySpec.builder(
+                "categoryTitleResources",
+                ClassName("kotlin.collections", "Map").parameterizedBy(
+                    ClassName("kotlin.reflect", "KClass").parameterizedBy(com.squareup.kotlinpoet.STAR),
+                    ClassName("kotlin", "Int"),
+                ),
+            ).addModifiers(KModifier.OVERRIDE)
+                .initializer(buildCategoryTitleResources(analysis)).build(),
+        )
+
+        val fileSpec = com.squareup.kotlinpoet.FileSpec.builder(packageName, schemaName)
+            .addType(objectBuilder.build())
+            .build()
+        val sourceFiles = linkedSetOf<KSFile>()
+        klass.containingFile?.let(sourceFiles::add)
+        properties.mapNotNull { it.containingFile }.forEach(sourceFiles::add)
+        analysis.plans.forEach { plan ->
+            plan.baseType.declaration.containingFile?.let(sourceFiles::add)
+            plan.serializer?.declaration?.containingFile?.let(sourceFiles::add)
+            plan.validator?.declaration?.containingFile?.let(sourceFiles::add)
+        }
+        analysis.settingConfigs.values.forEach { config ->
+            resolver.getClassDeclarationByName(resolver.getKSNameFromString(config.categoryClass.canonicalName))?.containingFile?.let(sourceFiles::add)
+            resolver.getClassDeclarationByName(resolver.getKSNameFromString(config.typeClass.canonicalName))?.containingFile?.let(sourceFiles::add)
+            config.actionClass?.let { actionClass ->
+                resolver.getClassDeclarationByName(resolver.getKSNameFromString(actionClass.canonicalName))?.containingFile?.let(sourceFiles::add)
+            }
+        }
+        fileSpec.writeTo(codeGenerator, Dependencies(false, *sourceFiles.toTypedArray()))
     }
 
-    private fun generatePersistedField(
-        prop: KSPropertyDeclaration,
-        modelClass: ClassName,
-        resolver: Resolver,
-    ): CodeBlock? {
-        val propName = prop.simpleName.asString()
-        val propType = prop.type.resolve()
-
-        val ann = prop.annotations.first {
-            it.annotationType.resolve().declaration.qualifiedName?.asString() == PERSISTED_ANNOTATION
+    private fun buildFieldMetadata(analysis: ClassAnalysis): CodeBlock {
+        if (analysis.metadata.isEmpty()) return CodeBlock.of("emptyMap()")
+        val code = CodeBlock.builder().add("mapOf(\n").indent()
+        analysis.metadata.entries.forEachIndexed { index, entry ->
+            val name = entry.key
+            val metadata = entry.value
+            if (index > 0) code.add(",\n")
+            code.add("%S to %T(\n", name, schemaFieldMetadataClass)
+            code.indent()
+            code.add("renamedFrom = %L,\n", metadata.renamedFrom?.let { CodeBlock.of("%S", it) } ?: CodeBlock.of("null"))
+            code.add("renamedSinceVersion = %L,\n", metadata.renamedSinceVersion?.toString() ?: "null")
+            code.add("addedInVersion = %L,\n", metadata.addedInVersion?.toString() ?: "null")
+            code.add("deprecated = %L,\n", metadata.deprecated)
+            code.add("deprecationMessage = %L,\n", metadata.deprecationMessage?.let { CodeBlock.of("%S", it) } ?: CodeBlock.of("null"))
+            code.add("removeInVersion = %L,\n", metadata.removeInVersion?.toString() ?: "null")
+            code.unindent().add(")")
         }
-        val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
+        code.unindent().add(")")
+        return code.build()
+    }
 
-        val hasSerialized = prop.hasAnnotation(SERIALIZED_ANNOTATION)
-
-        val keyOverride = args["key"]?.value as? String ?: ""
-        val keyName = keyOverride.ifBlank { toSnakeCase(propName) }
-
-        return generateFieldCode(prop, propType, modelClass, propName, keyName, null, hasSerialized, resolver)
+    private fun buildCategoryTitleResources(analysis: ClassAnalysis): CodeBlock {
+        val entries = analysis.categoryTitleResources
+        if (entries.isEmpty()) return CodeBlock.of("emptyMap()")
+        val code = CodeBlock.builder().add("mapOf(\n").indent()
+        var index = 0
+        for ((className, resource) in entries) {
+            if (index++ > 0) code.add(",\n")
+            code.add("%T::class to %L", className, resource)
+        }
+        code.unindent().add(")")
+        return code.build()
     }
 
     private fun generateFieldCode(
-        prop: KSPropertyDeclaration,
-        propType: KSType,
+        plan: FieldPlan,
+        config: SettingConfig?,
         modelClass: ClassName,
-        propName: String,
-        keyName: String,
-        metaBlock: CodeBlock?,
-        hasSerialized: Boolean,
+        modelDeclaration: KSClassDeclaration,
+        schemaName: String,
         resolver: Resolver,
-    ): CodeBlock? {
-        val isNullable = propType.isMarkedNullable
-        val baseType = propType.makeNotNullable()
-        val qualifiedName = baseType.declaration.qualifiedName?.asString()
-
-        // Check if it's an enum
-        val isEnum = (baseType.declaration as? KSClassDeclaration)?.classKind == ClassKind.ENUM_CLASS
-
-        // Check for built-in collection types
-        when (qualifiedName) {
-            "kotlin.collections.Set", "kotlin.collections.MutableSet", "kotlin.collections.LinkedHashSet", "kotlin.collections.HashSet" -> {
-                val typeArg = propType.arguments.firstOrNull()?.type?.resolve()
-                val argQname = typeArg?.declaration?.qualifiedName?.asString()
-                if (argQname == "kotlin.String" && typeArg?.isMarkedNullable != true && !isNullable) {
-                    return buildSimpleFieldCode(stringSetField, modelClass, propName, keyName, metaBlock)
-                }
-                if (isNullable || typeArg?.isMarkedNullable == true) {
-                    logger.error("Nullable collections are not supported; use @Serialized on '$propName' (Set<String>? / Set<String?>)", prop)
-                    return null
-                }
-                // Non-String element: serialized path or error below.
-                if (argQname == "kotlin.String") {
-                    return buildSimpleFieldCode(stringSetField, modelClass, propName, keyName, metaBlock)
-                }
-            }
-
-            "kotlin.collections.List", "kotlin.collections.MutableList", "kotlin.collections.ArrayList" -> {
-                val typeArg = propType.arguments.firstOrNull()?.type?.resolve()
-                if (isNullable || typeArg?.isMarkedNullable == true) {
-                    logger.error("Nullable collections are not supported; use @Serialized on '$propName' (List? / List<String?>)", prop)
-                    return null
-                }
-                return when (typeArg?.declaration?.qualifiedName?.asString()) {
-                    "kotlin.String" -> buildSimpleFieldCode(stringListField, modelClass, propName, keyName, metaBlock)
-                    "kotlin.Int" -> buildSimpleFieldCode(intListField, modelClass, propName, keyName, metaBlock)
-                    "kotlin.Long" -> buildSimpleFieldCode(longListField, modelClass, propName, keyName, metaBlock)
-                    else -> {
-                        if (hasSerialized || isSerializable(typeArg, resolver)) {
-                            buildSerializedFieldCode(propType, modelClass, propName, keyName, metaBlock, prop, isNullable)
-                        } else {
-                            logger.error("Unsupported List element type for $propName. Add @Serialized.", prop)
-                            null
-                        }
-                    }
-                }
-            }
-
-            "kotlin.collections.Map", "kotlin.collections.MutableMap", "kotlin.collections.LinkedHashMap", "kotlin.collections.HashMap" -> {
-                if (isNullable) {
-                    logger.error("Nullable maps are not supported; use @Serialized on '$propName' (Map? with null values)", prop)
-                    return null
-                }
-                val keyArg = propType.arguments.getOrNull(0)?.type?.resolve()
-                val valueArg = propType.arguments.getOrNull(1)?.type?.resolve()
-                if (keyArg?.isMarkedNullable == true || valueArg?.isMarkedNullable == true) {
-                    logger.error("Nullable map key/value types are not supported; use @Serialized on '$propName'", prop)
-                    return null
-                }
-                val keyTypeName = keyArg?.declaration?.qualifiedName?.asString()
-                val valueTypeName = valueArg?.declaration?.qualifiedName?.asString()
-
-                val mapFieldClass = getMapFieldClass(keyTypeName, valueTypeName)
-
-                return if (mapFieldClass != null) {
-                    buildSimpleFieldCode(mapFieldClass, modelClass, propName, keyName, metaBlock)
-                } else if (hasSerialized || isSerializable(valueArg, resolver)) {
-                    buildSerializedFieldCode(propType, modelClass, propName, keyName, metaBlock, prop, isNullable)
-                } else {
-                    logger.error("Unsupported Map type for $propName: Map<$keyTypeName, $valueTypeName>. Add @Serialized for complex value types.", prop)
-                    null
-                }
-            }
-        }
-
-        if (isNullable && propType.makeNotNullable().declaration.qualifiedName?.asString() == "kotlin.Unit") {
-            logger.error("Nullable Unit is not supported: $propName", prop)
-            return null
-        }
-
-        // Enum types
-        if (isEnum) {
-            return buildEnumFieldCode(baseType, modelClass, propName, keyName, metaBlock, prop, isNullable)
-        }
-
-        // Primitive types
-        val fieldClass = getFieldClass(baseType, isNullable)
-        if (fieldClass != null) {
-            return buildSimpleFieldCode(fieldClass, modelClass, propName, keyName, metaBlock)
-        }
-
-        // Complex types with @Serialized or @Serializable
-        if (hasSerialized || isSerializable(baseType, resolver)) {
-            if (hasSerialized && !isSerializable(baseType, resolver) && !prop.hasAnnotation(SERIALIZED_WITH_ANNOTATION)) {
-                logger.error("'$propName' uses @Serialized but ${baseType.declaration.simpleName.asString()} is not @Serializable; add @Serializable or @SerializedWith", prop)
-                return null
-            }
-            return buildSerializedFieldCode(propType, modelClass, propName, keyName, metaBlock, prop, isNullable)
-        }
-
-        logger.error("Unsupported type for $propName: $qualifiedName. Consider adding @Serialized.", prop)
-        return null
-    }
-
-    private fun buildMetaBlock(
-        title: String,
-        description: String,
-        titleRes: Int,
-        descriptionRes: Int,
-        categoryClass: ClassName,
-        categoryOrder: Int,
-        typeClass: ClassName,
-        keyName: String,
-        dependsOn: String,
-        min: Float,
-        max: Float,
-        step: Float,
-        options: List<String>,
-        optionsRes: Int,
-        actionClass: ClassName?,
-        validationBlock: CodeBlock?,
-        confirmationBlock: CodeBlock?,
-        noReset: Boolean,
-        confirmReset: String?,
-        platformNames: List<String>,
-        valueKindName: String,
-        enumTypeName: String?,
     ): CodeBlock {
-        return CodeBlock.builder()
-            .add("%T(\n", settingMeta)
-            .indent()
-            .add("title = %S,\n", title)
-            .add("description = %S,\n", description)
-            .add("titleRes = %L,\n", titleRes)
-            .add("descriptionRes = %L,\n", descriptionRes)
-            .add("category = %T::class,\n", categoryClass)
-            .add("categoryOrder = %L,\n", categoryOrder)
-            .add("type = %T::class,\n", typeClass)
-            .add("valueKind = %T.%L,\n", valueKindClass, valueKindName)
-            .apply {
-                if (enumTypeName != null) {
-                    add("enumTypeName = %S,\n", enumTypeName)
-                } else {
-                    add("enumTypeName = null,\n")
-                }
-            }
-            .add("key = %S,\n", keyName)
-            .add("dependsOn = %S,\n", dependsOn)
-            .add("min = %Lf,\n", min)
-            .add("max = %Lf,\n", max)
-            .add("step = %Lf,\n", step)
-            .add("options = listOf(")
-            .apply {
-                options.forEachIndexed { i, opt ->
-                    if (i > 0) add(", ")
-                    add("%S", opt)
-                }
-            }
-            .add("),\n")
-            .add("optionsRes = %L,\n", optionsRes)
-            .apply {
-                if (actionClass != null) {
-                    add("actionClass = %T::class,\n", actionClass)
-                } else {
-                    add("actionClass = null,\n")
-                }
-            }
-            .apply {
-                if (validationBlock != null) {
-                    add("validation = ").add(validationBlock).add(",\n")
-                } else {
-                    add("validation = null,\n")
-                }
-            }
-            .apply {
-                if (confirmationBlock != null) {
-                    add("confirmation = ").add(confirmationBlock).add(",\n")
-                } else {
-                    add("confirmation = null,\n")
-                }
-            }
-            .add("noReset = %L,\n", noReset)
-            .apply {
-                if (confirmReset != null) {
-                    add("confirmReset = %S,\n", confirmReset)
-                } else {
-                    add("confirmReset = null,\n")
-                }
-            }
-            .add("platforms = setOf(")
-            .apply {
-                val validPlatforms = platformNames.filter {
-                    it in listOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX", "WEB")
-                }
+        val meta = config?.let { buildMetaBlock(plan, it) }
+        val fieldCode = when (plan.kind) {
+            FieldKind.UNIT, FieldKind.PRIMITIVE -> buildSimpleFieldCode(
+                fieldClass = plan.fieldClass,
+                modelClass = modelClass,
+                propertyName = plan.propertyName,
+                keyName = plan.logicalKey,
+                meta = meta,
+                setterValue = CodeBlock.of("v"),
+            )
 
-                if (validPlatforms.isEmpty()) {
-                    add("%T.ALL", settingPlatformClass)
-                } else {
-                    validPlatforms.forEachIndexed { i, name ->
-                        if (i > 0) add(", ")
-                        add("%T.%L", settingPlatformClass, name)
-                    }
-                }
-            }
-            .add("),\n")
-            .unindent()
-            .add(")")
+            FieldKind.COLLECTION -> buildSimpleFieldCode(
+                fieldClass = plan.fieldClass,
+                modelClass = modelClass,
+                propertyName = plan.propertyName,
+                keyName = plan.logicalKey,
+                meta = meta,
+                setterValue = collectionSetterValue(plan.baseType),
+            )
+
+            FieldKind.ENUM -> buildEnumFieldCode(plan, modelClass, meta, resolver)
+
+            FieldKind.SERIALIZED -> buildSerializedFieldCode(
+                plan = plan,
+                modelClass = modelClass,
+                meta = meta,
+                modelDeclaration = modelDeclaration,
+                schemaName = schemaName,
+                resolver = resolver,
+            )
+        }
+        val noReset = plan.property.hasAnnotation(NO_RESET_ANNOTATION)
+        val resetConfirmation = confirmResetMessage(plan.property)
+        if (!noReset && resetConfirmation == null) return fieldCode
+        return CodeBlock.builder()
+            .add("%T(delegate = %L, isResettable = %L, resetConfirmation = %L)", configuredSettingField, fieldCode, !noReset, resetConfirmation?.let { CodeBlock.of("%S", it) } ?: CodeBlock.of("null"))
             .build()
     }
 
-    private fun buildValidationBlock(prop: KSPropertyDeclaration): CodeBlock? {
-        val hasRange = prop.hasAnnotation(RANGE_ANNOTATION)
-        val hasLength = prop.hasAnnotation(LENGTH_ANNOTATION)
-        val hasPattern = prop.hasAnnotation(PATTERN_ANNOTATION)
-        val hasRequired = prop.hasAnnotation(REQUIRED_ANNOTATION)
+    private fun buildSimpleFieldCode(
+        fieldClass: ClassName,
+        modelClass: ClassName,
+        propertyName: String,
+        keyName: String,
+        meta: CodeBlock?,
+        setterValue: CodeBlock,
+    ): CodeBlock = CodeBlock.builder()
+        .add("%T<%T>(\n", fieldClass, modelClass)
+        .indent()
+        .add("name = %S,\n", propertyName)
+        .add("keyName = %S,\n", keyName)
+        .add("meta = %L,\n", meta ?: CodeBlock.of("null"))
+        .add("getter = { it.%N },\n", propertyName)
+        .add("setter = { m, v -> m.copy(%N = %L) },\n", propertyName, setterValue)
+        .unindent()
+        .add(")")
+        .build()
 
-        if (!hasRange && !hasLength && !hasPattern && !hasRequired) {
-            return null
-        }
-
-        val builder = CodeBlock.builder()
-            .add("%T(\n", validationRules)
+    private fun buildEnumFieldCode(
+        plan: FieldPlan,
+        modelClass: ClassName,
+        meta: CodeBlock?,
+        resolver: Resolver,
+    ): CodeBlock {
+        val enumClass = plan.baseType.toClassNameOrNull()
+            ?: error("Cannot generate enum field for '${plan.propertyName}'")
+        val fieldClass = if (plan.nullable) nullableEnumField else enumField
+        val code = CodeBlock.builder()
+            .add("%T<%T, %T>(\n", fieldClass, modelClass, enumClass)
             .indent()
-
-        // Range
-        if (hasRange) {
-            val ann = prop.getAnnotation(RANGE_ANNOTATION)!!
-            val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-            val rangeMin = args["min"]?.value as? Double ?: -Double.MAX_VALUE
-            val rangeMax = args["max"]?.value as? Double ?: Double.MAX_VALUE
-            if (rangeMin > rangeMax) {
-                logger.error("@Range min ($rangeMin) must be <= max ($rangeMax)", prop)
-            }
-            val errorMsg = args["errorMessage"]?.value as? String ?: "Value out of range"
-            val errorRes = args["errorMessageRes"]?.value as? Int ?: 0
-
-            builder.add("range = %L..%L,\n", rangeMin, rangeMax)
-            builder.add("errorMessage = %S,\n", errorMsg)
-            builder.add("errorMessageRes = %L,\n", errorRes)
-        } else {
-            builder.add("range = null,\n")
-        }
-
-        // Length
-        if (hasLength) {
-            val ann = prop.getAnnotation(LENGTH_ANNOTATION)!!
-            val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-            val lenMin = args["min"]?.value as? Int ?: 0
-            val lenMax = args["max"]?.value as? Int ?: Int.MAX_VALUE
-            val errorMsg = args["errorMessage"]?.value as? String ?: "Invalid length"
-            val errorRes = args["errorMessageRes"]?.value as? Int ?: 0
-
-            builder.add("length = %L..%L,\n", lenMin, lenMax)
-            if (!hasRange) {
-                builder.add("errorMessage = %S,\n", errorMsg)
-                builder.add("errorMessageRes = %L,\n", errorRes)
-            }
-        } else {
-            builder.add("length = null,\n")
-        }
-
-        // Pattern
-        if (hasPattern) {
-            val ann = prop.getAnnotation(PATTERN_ANNOTATION)!!
-            val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-            val regex = args["regex"]?.value as? String ?: ".*"
-            val errorMsg = args["errorMessage"]?.value as? String ?: "Invalid format"
-            val errorRes = args["errorMessageRes"]?.value as? Int ?: 0
-
-            builder.add("pattern = Regex(%S),\n", regex)
-            if (!hasRange && !hasLength) {
-                builder.add("errorMessage = %S,\n", errorMsg)
-                builder.add("errorMessageRes = %L,\n", errorRes)
-            }
-        } else {
-            builder.add("pattern = null,\n")
-        }
-
-        // Required
-        if (hasRequired) {
-            val ann = prop.getAnnotation(REQUIRED_ANNOTATION)!!
-            val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-            val errorMsg = args["errorMessage"]?.value as? String ?: "This field is required"
-            val errorRes = args["errorMessageRes"]?.value as? Int ?: 0
-
-            builder.add("required = true,\n")
-            if (!hasRange && !hasLength && !hasPattern) {
-                builder.add("errorMessage = %S,\n", errorMsg)
-                builder.add("errorMessageRes = %L,\n", errorRes)
-            }
-        } else {
-            builder.add("required = false,\n")
-        }
-
-        builder.unindent()
-        builder.add(")")
-
-        return builder.build()
+            .add("name = %S,\n", plan.propertyName)
+            .add("keyName = %S,\n", plan.logicalKey)
+            .add("meta = %L,\n", meta ?: CodeBlock.of("null"))
+            .add("getter = { it.%N },\n", plan.propertyName)
+            .add("setter = { m, v -> m.copy(%N = v) },\n", plan.propertyName)
+            .add("enumValues = %T.values(),\n", enumClass)
+        if (!plan.nullable) code.add("defaultValue = %T().%N,\n", modelClass, plan.propertyName)
+        return code.unindent().add(")").build()
     }
 
-    private fun buildConfirmationBlock(prop: KSPropertyDeclaration): CodeBlock? {
-        val ann = prop.getAnnotation(REQUIRES_CONFIRMATION_ANNOTATION) ?: return null
-        val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
+    private fun buildSerializedFieldCode(
+        plan: FieldPlan,
+        modelClass: ClassName,
+        meta: CodeBlock?,
+        modelDeclaration: KSClassDeclaration,
+        schemaName: String,
+        resolver: Resolver,
+    ): CodeBlock {
+        val valueType = plan.baseType.generatedTypeName()
+        val fieldClass = if (plan.nullable) nullableSerializedField else serializedField
+        val serializer = plan.serializer?.let { spec ->
+            buildCustomKSerializer(
+                spec = spec,
+                valueType = valueType,
+                descriptorName = "${canonicalName(modelDeclaration)}.${plan.propertyName}.${spec.className.canonicalName}",
+            )
+        } ?: CodeBlock.of("%M<%T>()", serializerFunction, valueType)
+        val code = CodeBlock.builder()
+            .add("%T<%T, %T>(\n", fieldClass, modelClass, valueType)
+            .indent()
+            .add("name = %S,\n", plan.propertyName)
+            .add("keyName = %S,\n", plan.logicalKey)
+            .add("meta = %L,\n", meta ?: CodeBlock.of("null"))
+            .add("getter = { it.%N },\n", plan.propertyName)
+            .add("setter = { m, v -> m.copy(%N = v) },\n", plan.propertyName)
+            .add("serializer = %L,\n", serializer)
+        if (!plan.nullable) code.add("defaultValue = %T().%N,\n", modelClass, plan.propertyName)
+        return code.unindent().add(")").build()
+    }
 
-        val title = args["title"]?.value as? String ?: "Confirm Change"
-        val message = args["message"]?.value as? String ?: "Are you sure?"
-        val titleRes = args["titleRes"]?.value as? Int ?: 0
-        val messageRes = args["messageRes"]?.value as? Int ?: 0
-        val confirmText = args["confirmText"]?.value as? String ?: "Confirm"
-        val confirmTextRes = args["confirmTextRes"]?.value as? Int ?: 0
-        val cancelText = args["cancelText"]?.value as? String ?: "Cancel"
-        val cancelTextRes = args["cancelTextRes"]?.value as? Int ?: 0
-        val isDangerous = args["isDangerous"]?.value as? Boolean ?: false
+    private fun buildCustomKSerializer(
+        spec: CustomSerializerSpec,
+        valueType: TypeName,
+        descriptorName: String,
+    ): CodeBlock {
+        val safeDescriptorName = descriptorName.ifBlank { "settings.Custom" }
+        return CodeBlock.builder()
+            .add("object : %T<%T> {\n", kSerializerClass, valueType)
+            .indent()
+            .add("override val descriptor: %T = %M(%S, %T.%L)\n", serialDescriptorClass, primitiveSerialDescriptor, safeDescriptorName, primitiveKindClass, "STRING")
+            .add("override fun serialize(encoder: %T, value: %T) {\n", encoderClass, valueType)
+            .indent()
+            .add("encoder.encodeString(%L.serialize(value))\n", spec.instance)
+            .unindent()
+            .add("}\n")
+            .add("override fun deserialize(decoder: %T): %T {\n", decoderClass, valueType)
+            .indent()
+            .add("return %L.deserialize(decoder.decodeString())\n", spec.instance)
+            .unindent()
+            .add("}\n")
+            .unindent()
+            .add("}")
+            .build()
+    }
 
+    private fun buildMetaBlock(plan: FieldPlan, config: SettingConfig): CodeBlock = CodeBlock.builder()
+        .add("%T(\n", ClassName(corePackage, "SettingMeta"))
+        .indent()
+        .add("title = %S,\n", config.title)
+        .add("description = %S,\n", config.description)
+        .add("titleRes = %L,\n", config.titleRes)
+        .add("descriptionRes = %L,\n", config.descriptionRes)
+        .add("category = %T::class,\n", config.categoryClass)
+        .add("categoryOrder = %L,\n", config.categoryOrder)
+        .add("type = %T::class,\n", config.typeClass)
+        .add("valueKind = %T.%L,\n", valueKindClass, plan.valueKind)
+        .add("enumTypeName = %L,\n", plan.enumTypeName?.let { CodeBlock.of("%S", it) } ?: CodeBlock.of("null"))
+        .add("key = %S,\n", config.key)
+        .add("dependsOn = %S,\n", config.dependsOn)
+        .add("min = %Lf,\n", config.min)
+        .add("max = %Lf,\n", config.max)
+        .add("step = %Lf,\n", config.step)
+        .add("options = listOf(")
+        .apply {
+            config.options.forEachIndexed { index, option ->
+                if (index > 0) add(", ")
+                add("%S", option)
+            }
+        }
+        .add("),\n")
+        .add("optionsRes = %L,\n", config.optionsRes)
+        .add("actionClass = %L,\n", config.actionClass?.let { CodeBlock.of("%T::class", it) } ?: CodeBlock.of("null"))
+        .add("validation = %L,\n", buildValidationBlock(plan.property, config.validationMessage, plan.validator))
+        .add("confirmation = %L,\n", buildConfirmationBlock(plan.property))
+        .add("noReset = %L,\n", plan.property.hasAnnotation(NO_RESET_ANNOTATION))
+        .add("confirmReset = %L,\n", confirmResetMessage(plan.property)?.let { CodeBlock.of("%S", it) } ?: CodeBlock.of("null"))
+        .add("platforms = setOf(")
+        .apply {
+            if (config.platforms.isEmpty()) {
+                add("%T.ALL", settingPlatformClass)
+            } else {
+                config.platforms.forEachIndexed { index, platform ->
+                    if (index > 0) add(", ")
+                    add("%T.%L", settingPlatformClass, platform)
+                }
+            }
+        }
+        .add("),\n")
+        .unindent()
+        .add(")")
+        .build()
+
+    private fun buildValidationBlock(
+        property: KSPropertyDeclaration,
+        message: ValidationMessage?,
+        validator: CustomValidatorSpec?,
+    ): CodeBlock {
+        val hasRange = property.hasAnnotation(RANGE_ANNOTATION)
+        val hasLength = property.hasAnnotation(LENGTH_ANNOTATION)
+        val hasPattern = property.hasAnnotation(PATTERN_ANNOTATION)
+        val hasRequired = property.hasAnnotation(REQUIRED_ANNOTATION)
+        if (!hasRange && !hasLength && !hasPattern && !hasRequired && validator == null) return CodeBlock.of("null")
+        val code = CodeBlock.builder().add("%T(\n", validationRules).indent()
+        val range = property.getAnnotation(RANGE_ANNOTATION)
+        val rangeMin = range?.argument("min")?.doubleValue() ?: -Double.MAX_VALUE
+        val rangeMax = range?.argument("max")?.doubleValue() ?: Double.MAX_VALUE
+        if (hasRange) code.add("range = %L..%L,\n", rangeMin, rangeMax) else code.add("range = null,\n")
+        val length = property.getAnnotation(LENGTH_ANNOTATION)
+        val lengthMin = length?.argument("min")?.intValue() ?: 0
+        val lengthMax = length?.argument("max")?.intValue() ?: Int.MAX_VALUE
+        if (hasLength) code.add("length = %L..%L,\n", lengthMin, lengthMax) else code.add("length = null,\n")
+        val pattern = property.getAnnotation(PATTERN_ANNOTATION)
+        val regex = pattern?.argument("regex")?.stringValue() ?: ".*"
+        if (hasPattern) code.add("pattern = Regex(%S),\n", regex) else code.add("pattern = null,\n")
+        code.add("required = %L,\n", hasRequired)
+        code.add("errorMessage = %S,\n", message?.text ?: "Value out of range")
+        code.add("errorMessageRes = %L,\n", message?.resource ?: 0)
+        if (validator == null) {
+            code.add("customValidators = emptyList(),\n")
+        } else {
+            code.add("customValidators = listOf(%L),\n", validator.instance)
+        }
+        return code.unindent().add(")").build()
+    }
+
+    private fun buildConfirmationBlock(property: KSPropertyDeclaration): CodeBlock {
+        val annotation = property.getAnnotation(REQUIRES_CONFIRMATION_ANNOTATION) ?: return CodeBlock.of("null")
+        val title = annotation.argument("title")?.stringValue() ?: "Confirm Change"
+        val message = annotation.argument("message")?.stringValue() ?: "Are you sure you want to change this setting?"
+        val titleRes = annotation.argument("titleRes")?.intValue() ?: 0
+        val messageRes = annotation.argument("messageRes")?.intValue() ?: 0
+        val confirmText = annotation.argument("confirmText")?.stringValue() ?: "Confirm"
+        val confirmTextRes = annotation.argument("confirmTextRes")?.intValue() ?: 0
+        val cancelText = annotation.argument("cancelText")?.stringValue() ?: "Cancel"
+        val cancelTextRes = annotation.argument("cancelTextRes")?.intValue() ?: 0
+        val dangerous = annotation.argument("isDangerous")?.booleanValue() ?: false
         return CodeBlock.builder()
             .add("%T(\n", confirmationConfig)
             .indent()
@@ -933,380 +1750,503 @@ class SettingsProcessor(
             .add("confirmTextRes = %L,\n", confirmTextRes)
             .add("cancelText = %S,\n", cancelText)
             .add("cancelTextRes = %L,\n", cancelTextRes)
-            .add("isDangerous = %L,\n", isDangerous)
+            .add("isDangerous = %L,\n", dangerous)
             .unindent()
             .add(")")
             .build()
     }
 
-    private fun getActionClass(prop: KSPropertyDeclaration): ClassName? {
-        val ann = prop.getAnnotation(ACTION_HANDLER_ANNOTATION) ?: return null
-        val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-        val actionType = args["action"]?.value as? KSType ?: return null
-        return actionType.toClassName()
+    private fun confirmResetMessage(property: KSPropertyDeclaration): String? {
+        val annotation = property.getAnnotation(CONFIRM_RESET_ANNOTATION) ?: return null
+        return annotation.argument("message")?.stringValue() ?: "Are you sure you want to reset this setting?"
     }
 
-    private fun getCustomSerializerClass(prop: KSPropertyDeclaration): ClassName? {
-        val ann = prop.getAnnotation(SERIALIZED_WITH_ANNOTATION) ?: return null
-        val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-        val serializerType = args["serializer"]?.value as? KSType ?: return null
-        return serializerType.toClassName()
+    private fun collectionSetterValue(type: KSType): CodeBlock = when (type.declaration.qualifiedName?.asString()) {
+        "kotlin.collections.MutableList" -> CodeBlock.of("v.toMutableList()")
+        "kotlin.collections.ArrayList" -> CodeBlock.of("%T(v)", ClassName("kotlin.collections", "ArrayList"))
+        "kotlin.collections.MutableSet" -> CodeBlock.of("v.toMutableSet()")
+        "kotlin.collections.LinkedHashSet" -> CodeBlock.of("%T(v)", ClassName("kotlin.collections", "LinkedHashSet"))
+        "kotlin.collections.HashSet" -> CodeBlock.of("%T(v)", ClassName("kotlin.collections", "HashSet"))
+        "kotlin.collections.MutableMap" -> CodeBlock.of("v.toMutableMap()")
+        "kotlin.collections.LinkedHashMap" -> CodeBlock.of("%T(v)", ClassName("kotlin.collections", "LinkedHashMap"))
+        "kotlin.collections.HashMap" -> CodeBlock.of("%T(v)", ClassName("kotlin.collections", "HashMap"))
+        else -> CodeBlock.of("v")
     }
 
-    private fun getConfirmResetMessage(prop: KSPropertyDeclaration): String? {
-        val ann = prop.getAnnotation(CONFIRM_RESET_ANNOTATION) ?: return null
-        val args = ann.arguments.associateBy { it.name?.asString().orEmpty() }
-        return args["message"]?.value as? String
-            ?: "Are you sure you want to reset this setting?"
-    }
-
-    private fun buildSimpleFieldCode(
-        fieldClass: ClassName,
-        modelClass: ClassName,
-        propName: String,
-        keyName: String,
-        metaBlock: CodeBlock?,
-    ): CodeBlock {
-        return CodeBlock.builder()
-            .add("%T<%T>(\n", fieldClass, modelClass)
-            .indent()
-            .add("name = %S,\n", propName)
-            .add("keyName = %S,\n", keyName)
-            .apply {
-                if (metaBlock != null) {
-                    add("meta = ").add(metaBlock).add(",\n")
-                } else {
-                    add("meta = null,\n")
-                }
+    private fun physicalKeysFor(
+        key: String,
+        kind: FieldKind,
+        baseName: String?,
+        nullable: Boolean,
+        fieldClass: ClassName?,
+    ): List<String> {
+        if (kind == FieldKind.UNIT) return emptyList()
+        val storageKind = when (kind) {
+            FieldKind.PRIMITIVE -> when (baseName) {
+                "kotlin.Boolean" -> if (nullable) "nullable_boolean" else "boolean"
+                "kotlin.Int" -> if (nullable) "nullable_int" else "int"
+                "kotlin.Long" -> if (nullable) "nullable_long" else "long"
+                "kotlin.Float" -> if (nullable) "nullable_float" else "float"
+                "kotlin.Double" -> if (nullable) "nullable_double" else "double"
+                "kotlin.String" -> if (nullable) "nullable_string" else "string"
+                else -> error("Unknown primitive kind '$baseName'")
             }
-            .add("getter = { it.%L },\n", propName)
-            .add("setter = { m, v -> m.copy(%L = v) },\n", propName)
-            .unindent()
-            .add(")")
-            .build()
-    }
-
-    private fun buildEnumFieldCode(
-        enumType: KSType,
-        modelClass: ClassName,
-        propName: String,
-        keyName: String,
-        metaBlock: CodeBlock?,
-        prop: KSPropertyDeclaration,
-        isNullable: Boolean,
-    ): CodeBlock {
-        val enumClass = enumType.toClassName()
-        val fieldClass = if (isNullable) nullableEnumField else enumField
-
-        // Use the model's own default (getter(schema.default)) rather than
-        // entries.first(): a model defaulting to DARK must persist DARK.
-        // Generated via a default-value lambda is impossible here, so the
-        // runtime field keeps an optional legacy default (null = use schema).
-        val builder = CodeBlock.builder()
-            .add("%T<%T, %T>(\n", fieldClass, modelClass, enumClass)
-            .indent()
-            .add("name = %S,\n", propName)
-            .add("keyName = %S,\n", keyName)
-            .apply {
-                if (metaBlock != null) {
-                    add("meta = ").add(metaBlock).add(",\n")
-                } else {
-                    add("meta = null,\n")
-                }
+            FieldKind.ENUM -> if (nullable) "nullable_enum" else "enum"
+            FieldKind.SERIALIZED -> if (nullable) "nullable_serialized" else "serialized"
+            FieldKind.COLLECTION -> when (fieldClass?.simpleName) {
+                "StringListField" -> "string_list"
+                "IntListField" -> "int_list"
+                "LongListField" -> "long_list"
+                "StringSetField" -> "string_set"
+                "StringMapField", "StringLongMapField", "StringIntMapField", "StringFloatMapField", "StringDoubleMapField", "StringBooleanMapField",
+                "IntStringMapField", "IntIntMapField", "IntLongMapField", "LongStringMapField", "LongLongMapField", "LongIntMapField" -> "map"
+                else -> error("Unknown collection field '${fieldClass?.simpleName}'")
             }
-            .add("getter = { it.%L },\n", propName)
-            .add("setter = { m, v -> m.copy(%L = v) },\n", propName)
-            .add("enumValues = %T.values(),\n", enumClass)
-
-        if (!isNullable) {
-            val modelDefault = propModelDefault(prop, modelClass, enumClass)
-            builder.add("defaultValue = %L,\n", modelDefault)
+            FieldKind.UNIT -> return emptyList()
         }
-
-        return builder
-            .unindent()
-            .add(")")
-            .build()
-    }
-
-    /**
-     * Best-effort reference to the model's declared default for [propName]:
-     * `%T().prop` on the no-arg model instance. Falls back to entries.first()
-     * when the model lacks a no-arg constructor (an error is logged at the
-     * schema-default site instead).
-     */
-    private fun propModelDefault(prop: KSPropertyDeclaration, modelClass: ClassName, enumClass: ClassName): CodeBlock {
-        return CodeBlock.of("%T().%L", modelClass, prop.simpleName.asString())
-    }
-
-    private fun buildSerializedFieldCode(
-        propType: KSType,
-        modelClass: ClassName,
-        propName: String,
-        keyName: String,
-        metaBlock: CodeBlock?,
-        prop: KSPropertyDeclaration,
-        isNullable: Boolean,
-    ): CodeBlock {
-        val typeClassName = propType.makeNotNullable().toTypeName()
-        val fieldClass = if (isNullable) nullableSerializedField else serializedField
-        val customSerializer = getCustomSerializerClass(prop)
-
-        val builder = CodeBlock.builder()
-            .add("%T<%T, %T>(\n", fieldClass, modelClass, typeClassName)
-            .indent()
-            .add("name = %S,\n", propName)
-            .add("keyName = %S,\n", keyName)
-            .apply {
-                if (metaBlock != null) {
-                    add("meta = ").add(metaBlock).add(",\n")
-                } else {
-                    add("meta = null,\n")
-                }
+        val canonical = "__kmp_settings_v2__:$storageKind:${key.length}:$key"
+        val legacyVariants = if (nullable) {
+            when (fieldClass?.simpleName) {
+                "NullableLongField" -> listOf(key, "${key}_nullable_long")
+                "NullableBooleanField", "NullableIntField", "NullableFloatField", "NullableDoubleField", "NullableStringField" -> listOf(key, "${key}_nullable")
+                else -> listOf(key)
             }
-            .add("getter = { it.%L },\n", propName)
-            .add("setter = { m, v -> m.copy(%L = v) },\n", propName)
-            .apply {
-                if (customSerializer != null) {
-                    add("serializer = %T.serializer(),\n", customSerializer)
-                } else {
-                    add("serializer = %M<%T>(),\n", MemberName("kotlinx.serialization", "serializer"), typeClassName)
-                }
-            }
-
-        if (!isNullable) {
-            val defaultValue = buildModelPropDefault(modelClass, propName, typeClassName)
-            builder.add("defaultValue = %L,\n", defaultValue)
-        }
-
-        return builder
-            .unindent()
-            .add(")")
-            .build()
-    }
-
-    /**
-     * Model-declared default (`Model().prop`) so generated defaults match the
-     * data class initializer instead of emptyList()/first-entry guesses.
-     */
-    private fun buildModelPropDefault(modelClass: ClassName, propName: String, type: TypeName): CodeBlock {
-        return CodeBlock.of("%T().%L", modelClass, propName)
-    }
-
-    /**
-     * Convert a KSType to a TypeName, preserving nesting, argument nullability,
-     * variance, and star projections.
-     */
-    private fun KSType.toTypeName(): TypeName {
-        val className = toClassName()
-        val typeArgs: List<TypeName> = arguments.map { arg ->
-            when (arg.variance) {
-                Variance.STAR -> STAR
-                Variance.COVARIANT -> WildcardTypeName.producerOf(
-                    arg.type?.resolve()?.toTypeName() ?: ANY
-                )
-                Variance.CONTRAVARIANT -> WildcardTypeName.consumerOf(
-                    arg.type?.resolve()?.toTypeName() ?: ANY
-                )
-                else -> {
-                    val resolved = arg.type?.resolve()
-                    (resolved?.toTypeName() ?: ANY).copy(nullable = resolved?.isMarkedNullable == true)
-                }
-            }
-        }
-        return if (typeArgs.isNotEmpty()) {
-            className.parameterizedBy(typeArgs).copy(nullable = isMarkedNullable)
         } else {
-            className.copy(nullable = isMarkedNullable)
+            listOf(key)
         }
+        if (!nullable) return (listOf(canonical) + legacyVariants).distinct()
+        val marker = "__kmp_settings_v2__:null:$storageKind:${key.length}:$key"
+        return (listOf(canonical, marker) + legacyVariants).distinct()
     }
 
-    /**
-     * Generate a default value expression for a KSType.
-     */
-    private fun buildDefaultValue(type: KSType): CodeBlock {
+    private fun nativeCollectionField(type: KSType, nullable: Boolean): ClassName? {
+        if (nullable) return null
         val qname = type.declaration.qualifiedName?.asString()
+        val args = type.arguments
+        if (args.any { it.variance != Variance.INVARIANT }) return null
+        val first = args.getOrNull(0)?.type?.resolve()?.let(::resolveTypeForInspection)
+        val second = args.getOrNull(1)?.type?.resolve()?.let(::resolveTypeForInspection)
+        if (args.isNotEmpty() && (first == null || first.isMarkedNullable)) return null
+        if (args.size > 1 && second?.isMarkedNullable == true) return null
         return when (qname) {
-            "kotlin.collections.List" -> CodeBlock.of("emptyList()")
-            "kotlin.collections.Set" -> CodeBlock.of("emptySet()")
-            "kotlin.collections.Map" -> CodeBlock.of("emptyMap()")
-            else -> CodeBlock.of("%T()", type.toTypeName())
-        }
-    }
-
-    private fun getCategoryOrder(categoryType: KSType?): Int {
-        if (categoryType == null) return Int.MAX_VALUE
-
-        val categoryDecl = categoryType.declaration
-        val catDefAnn = categoryDecl.annotations.firstOrNull {
-            it.annotationType.resolve().declaration.qualifiedName?.asString() == CATEGORY_DEF_ANNOTATION
-        } ?: return Int.MAX_VALUE
-
-        return catDefAnn.arguments
-            ?.firstOrNull { it.name?.asString() == "order" }
-            ?.value as? Int ?: 0
-    }
-
-    private fun getFieldClass(type: KSType, isNullable: Boolean): ClassName? {
-        val qualifiedName = type.declaration.qualifiedName?.asString()
-
-        return if (isNullable) {
-            when (qualifiedName) {
-                "kotlin.Boolean" -> nullableBooleanField
-                "kotlin.Int" -> nullableIntField
-                "kotlin.Long" -> nullableLongField
-                "kotlin.Float" -> nullableFloatField
-                "kotlin.Double" -> nullableDoubleField
-                "kotlin.String" -> nullableStringField
-                "kotlin.Unit" -> unitField
-                else -> null
+            "kotlin.collections.Set", "kotlin.collections.MutableSet", "kotlin.collections.LinkedHashSet", "kotlin.collections.HashSet" -> {
+                if (first?.declaration?.qualifiedName?.asString() == "kotlin.String") stringSetField else null
             }
-        } else {
-            when (qualifiedName) {
-                "kotlin.Boolean" -> booleanField
-                "kotlin.Int" -> intField
-                "kotlin.Long" -> longField
-                "kotlin.Float" -> floatField
-                "kotlin.Double" -> doubleField
-                "kotlin.String" -> stringField
-                "kotlin.Unit" -> unitField
-                else -> null
+            "kotlin.collections.List", "kotlin.collections.MutableList", "kotlin.collections.ArrayList" -> {
+                when (first?.declaration?.qualifiedName?.asString()) {
+                    "kotlin.String" -> stringListField
+                    "kotlin.Int" -> intListField
+                    "kotlin.Long" -> longListField
+                    else -> null
+                }
             }
-        }
-    }
-
-    private fun isSerializable(type: KSType?, resolver: Resolver): Boolean {
-        if (type == null) return false
-        return type.declaration.annotations.any {
-            it.annotationType.resolve().declaration.qualifiedName?.asString() == KOTLINX_SERIALIZABLE
-        }
-    }
-
-    private fun KSPropertyDeclaration.hasAnnotation(fqcn: String): Boolean =
-        annotations.any { it.annotationType.resolve().declaration.qualifiedName?.asString() == fqcn }
-
-    private fun KSPropertyDeclaration.getAnnotation(fqcn: String): KSAnnotation? =
-        annotations.firstOrNull { it.annotationType.resolve().declaration.qualifiedName?.asString() == fqcn }
-
-    private fun KSType.toClassName(): ClassName {
-        // Nested-class-aware: walk parents so `Outer.Inner` keeps both names.
-        // kotlinpoet-ksp's toClassName handles this too; this local version
-        // also tolerates declarations without a resolvable parent chain.
-        val decl = declaration
-        val pkg = decl.packageName.asString()
-        val names = mutableListOf(decl.simpleName.asString())
-        var parent = decl.parentDeclaration
-        while (parent != null && parent !is KSFile) {
-            names.add(0, parent.simpleName.asString())
-            parent = parent.parentDeclaration
-        }
-        return ClassName(pkg, names)
-    }
-
-    private fun toSnakeCase(s: String): String = buildString {
-        s.forEachIndexed { i, c ->
-            if (c.isUpperCase() && i != 0) append('_')
-            append(c.lowercaseChar())
-        }
-    }
-
-    private fun getMapFieldClass(keyType: String?, valueType: String?): ClassName? {
-        return when (keyType) {
-            "kotlin.String" -> when (valueType) {
-                "kotlin.String" -> stringMapField
-                "kotlin.Int" -> stringIntMapField
-                "kotlin.Long" -> stringLongMapField
-                "kotlin.Float" -> stringFloatMapField
-                "kotlin.Double" -> stringDoubleMapField
-                "kotlin.Boolean" -> stringBooleanMapField
-                else -> null
+            "kotlin.collections.Map", "kotlin.collections.MutableMap", "kotlin.collections.LinkedHashMap", "kotlin.collections.HashMap" -> {
+                if (args.size != 2) null else getMapFieldClass(
+                    first?.declaration?.qualifiedName?.asString(),
+                    second?.declaration?.qualifiedName?.asString(),
+                )
             }
-
-            "kotlin.Int" -> when (valueType) {
-                "kotlin.String" -> intStringMapField
-                "kotlin.Int" -> intIntMapField
-                "kotlin.Long" -> intLongMapField
-                else -> null
-            }
-
-            "kotlin.Long" -> when (valueType) {
-                "kotlin.String" -> longStringMapField
-                "kotlin.Long" -> longLongMapField
-                "kotlin.Int" -> longIntMapField
-                else -> null
-            }
-
             else -> null
         }
     }
 
-    private fun extractPlatformNames(platformsArg: KSValueArgument?, propName: String): List<String> {
-        if (platformsArg == null) {
-            return emptyList()
+    private fun primitiveField(typeName: String?, nullable: Boolean): ClassName? = if (nullable) {
+        when (typeName) {
+            "kotlin.Boolean" -> nullableBooleanField
+            "kotlin.Int" -> nullableIntField
+            "kotlin.Long" -> nullableLongField
+            "kotlin.Float" -> nullableFloatField
+            "kotlin.Double" -> nullableDoubleField
+            "kotlin.String" -> nullableStringField
+            else -> null
         }
-
-        val value = platformsArg.value
-        if (value !is List<*>) {
-            logger.error("$propName: platforms must be an array of SettingPlatform", null)
-            return emptyList()
+    } else {
+        when (typeName) {
+            "kotlin.Boolean" -> booleanField
+            "kotlin.Int" -> intField
+            "kotlin.Long" -> longField
+            "kotlin.Float" -> floatField
+            "kotlin.Double" -> doubleField
+            "kotlin.String" -> stringField
+            else -> null
         }
-
-        // Fail-open extraction (typo -> ALL) previously hid misconfigurations.
-        // Only exact SettingPlatform entries are accepted; anything else is a
-        // KSP error so the generated `platforms` set is always explicit.
-        val valid = setOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX", "WEB")
-        val names = mutableListOf<String>()
-
-        value.forEach { element ->
-            val name: String? = when (element) {
-                is KSType -> {
-                    val decl = element.declaration
-                    val parent = decl.parentDeclaration
-                    if (parent?.qualifiedName?.asString() == "io.github.mlmgames.settings.core.annotations.SettingPlatform") {
-                        decl.simpleName.asString()
-                    } else null
-                }
-                is KSClassDeclaration -> {
-                    val parent = element.parentDeclaration
-                    if (parent?.qualifiedName?.asString() == "io.github.mlmgames.settings.core.annotations.SettingPlatform") {
-                        element.simpleName.asString()
-                    } else null
-                }
-                else -> element?.toString()?.substringAfterLast('.')
-                    ?.takeIf { it in valid }
-            }
-            if (name == null || name !in valid) {
-                logger.error("$propName: unknown platform '$element'; expected one of $valid", null)
-            } else {
-                names.add(name)
-            }
-        }
-
-        return names.distinct()
     }
 
-    private fun computeValueKindInfo(propType: KSType, resolver: Resolver): Pair<String, String?> {
-        val baseType = propType.makeNotNullable()
-        val qualifiedName = baseType.declaration.qualifiedName?.asString()
+    private fun getMapFieldClass(keyType: String?, valueType: String?): ClassName? = when (keyType) {
+        "kotlin.String" -> when (valueType) {
+            "kotlin.String" -> stringMapField
+            "kotlin.Int" -> stringIntMapField
+            "kotlin.Long" -> stringLongMapField
+            "kotlin.Float" -> stringFloatMapField
+            "kotlin.Double" -> stringDoubleMapField
+            "kotlin.Boolean" -> stringBooleanMapField
+            else -> null
+        }
+        "kotlin.Int" -> when (valueType) {
+            "kotlin.String" -> intStringMapField
+            "kotlin.Int" -> intIntMapField
+            "kotlin.Long" -> intLongMapField
+            else -> null
+        }
+        "kotlin.Long" -> when (valueType) {
+            "kotlin.String" -> longStringMapField
+            "kotlin.Long" -> longLongMapField
+            "kotlin.Int" -> longIntMapField
+            else -> null
+        }
+        else -> null
+    }
 
-        return when (qualifiedName) {
+    private fun isSerializableType(type: KSType, resolver: Resolver, seen: MutableSet<String>): Boolean {
+        if (type.isError || type.declaration is KSTypeParameter) return false
+        val name = type.declaration.qualifiedName?.asString() ?: return false
+        if (name in setOf(
+                "kotlin.Boolean", "kotlin.Byte", "kotlin.Short", "kotlin.Int", "kotlin.Long",
+                "kotlin.Float", "kotlin.Double", "kotlin.Char", "kotlin.String",
+            )) return true
+        if (!seen.add(name)) return true
+        try {
+            if (isCollectionType(name)) {
+                return type.arguments.all { argument ->
+                    val resolved = argument.type?.resolve() ?: return@all false
+                    isSerializableType(resolveTypeForInspection(resolved), resolver, seen)
+                }
+            }
+            if (type.declaration.annotations.any { it.annotationQName() == KOTLINX_SERIALIZABLE }) return true
+            return false
+        } finally {
+            seen.remove(name)
+        }
+    }
+
+    private fun resolveType(type: KSType, diagnostics: Diagnostics, symbol: KSNode): KSType? {
+        var current = type
+        val seen = mutableSetOf<String>()
+        while (true) {
+            val alias = current.declaration as? KSTypeAlias ?: return current
+            val id = canonicalName(alias)
+            if (!seen.add(id)) {
+                diagnostics.error("Cyclic type alias while resolving '${symbol.toString()}'", symbol)
+                return null
+            }
+            if (alias.typeParameters.isNotEmpty()) {
+                diagnostics.error("Generic type aliases are not supported in settings properties", symbol)
+                return null
+            }
+            val underlying = runCatching { alias.type.resolve() }.getOrNull() ?: return null
+            current = if (current.isMarkedNullable && !underlying.isMarkedNullable) underlying.makeNullable() else underlying
+        }
+    }
+
+    private fun resolveTypeForInspection(type: KSType): KSType {
+        var current = type
+        val seen = mutableSetOf<String>()
+        while (true) {
+            val declaration = current.declaration
+            if (declaration !is KSTypeAlias || declaration.typeParameters.isNotEmpty()) break
+            val id = canonicalName(declaration)
+            if (!seen.add(id)) break
+            val next = runCatching { declaration.type.resolve() }.getOrNull() ?: break
+            current = if (current.isMarkedNullable && !next.isMarkedNullable) next.makeNullable() else next
+        }
+        return current
+    }
+
+    private fun hasInvalidTypeArguments(type: KSType): Boolean = type.arguments.any { argument ->
+        argument.variance == Variance.STAR || argument.type == null || containsErrorType(argument.type!!.resolve())
+    }
+
+    private fun isCollectionType(qname: String?): Boolean = qname in setOf(
+        "kotlin.collections.List",
+        "kotlin.collections.MutableList",
+        "kotlin.collections.ArrayList",
+        "kotlin.collections.Set",
+        "kotlin.collections.MutableSet",
+        "kotlin.collections.LinkedHashSet",
+        "kotlin.collections.HashSet",
+        "kotlin.collections.Map",
+        "kotlin.collections.MutableMap",
+        "kotlin.collections.LinkedHashMap",
+        "kotlin.collections.HashMap",
+    )
+
+    private fun isPrimitiveType(qname: String?): Boolean = qname in setOf(
+        "kotlin.Boolean", "kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double", "kotlin.String",
+    )
+
+    private fun isEnumType(type: KSType): Boolean =
+        (type.declaration as? KSClassDeclaration)?.classKind == ClassKind.ENUM_CLASS
+
+    private fun valueKindFor(type: KSType): Pair<String, String?> {
+        val qname = type.declaration.qualifiedName?.asString()
+        return when (qname) {
             "kotlin.Boolean" -> "BOOLEAN" to null
             "kotlin.Int" -> "INT" to null
             "kotlin.Long" -> "LONG" to null
             "kotlin.Float" -> "FLOAT" to null
             "kotlin.Double" -> "DOUBLE" to null
             "kotlin.String" -> "STRING" to null
-            else -> {
-                val isEnum = (baseType.declaration as? KSClassDeclaration)?.classKind == ClassKind.ENUM_CLASS
-                if (isEnum) {
-                    val enumClass = baseType.toClassName()
-                    // Canonical nested name (Outer.Inner), not pkg+simpleName.
-                    "ENUM" to enumClass.canonicalName
-                } else {
-                    "NONE" to null
-                }
+            else -> if (isEnumType(type)) {
+                "ENUM" to type.toClassNameOrNull()?.canonicalName
+            } else {
+                "NONE" to null
             }
         }
+    }
+
+    private fun uiKind(typeClass: ClassName): UiKind = when (typeClass.canonicalName) {
+        "$typesPackage.Toggle" -> UiKind.TOGGLE
+        "$typesPackage.Dropdown" -> UiKind.DROPDOWN
+        "$typesPackage.Slider" -> UiKind.SLIDER
+        "$typesPackage.Button" -> UiKind.BUTTON
+        "$typesPackage.TextInput" -> UiKind.TEXT_INPUT
+        "$typesPackage.TimePickerType" -> UiKind.TIME_PICKER
+        else -> UiKind.CUSTOM
+    }
+
+    private fun keyFor(property: KSPropertyDeclaration, kind: AnnotationKind): String {
+        val annotation = property.getAnnotation(
+            if (kind == AnnotationKind.SETTING) SETTING_ANNOTATION else PERSISTED_ANNOTATION,
+        ) ?: return toSnakeCase(property.simpleName.asString())
+        val explicit = annotation.argument("key")?.stringValue().orEmpty()
+        return explicit.ifBlank { toSnakeCase(property.simpleName.asString()) }
+    }
+
+    private fun toSnakeCase(value: String): String = buildString {
+        value.forEachIndexed { index, character ->
+            if (character.isUpperCase() && index != 0) append('_')
+            append(character.lowercaseChar())
+        }
+    }
+
+    private fun KSPropertyDeclaration.hasAnnotation(fqcn: String): Boolean = getAnnotation(fqcn) != null
+
+    private fun KSAnnotated.getAnnotation(fqcn: String): KSAnnotation? = annotations.firstOrNull {
+        it.annotationQName() == fqcn
+    }
+
+    private fun KSAnnotation.argument(name: String): KSValueArgument? = arguments.firstOrNull {
+        it.name?.asString() == name
+    }
+
+    private fun KSAnnotation.annotationQName(): String? = runCatching {
+        annotationType.resolve().declaration.qualifiedName?.asString()
+    }.getOrNull()
+
+    private fun KSValueArgument.intValue(): Int? = when (val value = value) {
+        is Int -> value
+        is Number -> value.toInt()
+        else -> null
+    }
+
+    private fun KSValueArgument.floatValue(): Float? = when (val value = value) {
+        is Float -> value
+        is Number -> value.toFloat()
+        else -> null
+    }
+
+    private fun KSValueArgument.doubleValue(): Double? = when (val value = value) {
+        is Double -> value
+        is Number -> value.toDouble()
+        else -> null
+    }
+
+    private fun KSValueArgument.stringValue(): String? = value as? String
+
+    private fun KSValueArgument.booleanValue(): Boolean? = value as? Boolean
+
+    private fun stringListArgument(
+        annotation: KSAnnotation,
+        name: String,
+        diagnostics: Diagnostics,
+        propertyName: String,
+    ): List<String> {
+        val argument = annotation.argument(name) ?: return emptyList()
+        val values = when (val value = argument.value) {
+            is List<*> -> value
+            is Array<*> -> value.toList()
+            else -> null
+        }
+        if (values == null) {
+            diagnostics.error("@Setting $name must be an array of strings ('$propertyName')")
+            return emptyList()
+        }
+        val result = mutableListOf<String>()
+        for (value in values) {
+            if (value !is String) {
+                diagnostics.error("@Setting $name must contain only strings ('$propertyName')")
+                return emptyList()
+            }
+            result += value
+        }
+        return result
+    }
+
+    private fun platformListArgument(
+        annotation: KSAnnotation,
+        propertyName: String,
+        diagnostics: Diagnostics,
+    ): List<String> {
+        val argument = annotation.argument("platforms") ?: return listOf("ALL")
+        val values = when (val value = argument.value) {
+            is List<*> -> value
+            is Array<*> -> value.toList()
+            else -> null
+        }
+        if (values == null) {
+            diagnostics.error("@Setting platforms must be an array of SettingPlatform ('$propertyName')")
+            return listOf("ALL")
+        }
+        val valid = setOf("ALL", "ANDROID", "IOS", "DESKTOP", "JVM", "LINUX", "WEB")
+        val result = mutableListOf<String>()
+        for (value in values) {
+            val name = when (value) {
+                is KSType -> value.declaration.simpleName.asString().takeIf {
+                    value.declaration.parentDeclaration?.qualifiedName?.asString() == annotationsPackage + ".SettingPlatform"
+                }
+                is KSClassDeclaration -> value.simpleName.asString().takeIf {
+                    value.parentDeclaration?.qualifiedName?.asString() == annotationsPackage + ".SettingPlatform"
+                }
+                else -> value?.toString()?.substringAfterLast('.')
+            }
+            if (name == null || name !in valid) {
+                diagnostics.error("Unknown platform '$value' on '$propertyName'")
+            } else if (name !in result) {
+                result += name
+            }
+        }
+        return result.ifEmpty { listOf("ALL") }
+    }
+
+    private fun isPrimaryConstructorProperty(property: KSPropertyDeclaration): Boolean {
+        val parent = property.parentDeclaration as? KSClassDeclaration ?: return false
+        return parent.primaryConstructor?.parameters.orEmpty().any {
+            it.name?.asString() == property.simpleName.asString()
+        }
+    }
+
+    private fun isAccessible(declaration: KSDeclaration): Boolean =
+        Modifier.PRIVATE !in declaration.modifiers && Modifier.PROTECTED !in declaration.modifiers
+
+    private fun isAccessibleProperty(property: KSPropertyDeclaration): Boolean {
+        if (!isAccessible(property)) return false
+        val getterVisibility = property.getter?.modifiers.orEmpty()
+        return Modifier.PRIVATE !in getterVisibility && Modifier.PROTECTED !in getterVisibility
+    }
+
+    private fun hasInaccessibleParent(klass: KSClassDeclaration): Boolean {
+        var parent = klass.parentDeclaration
+        while (parent is KSClassDeclaration) {
+            if (!isAccessible(parent)) return true
+            parent = parent.parentDeclaration
+        }
+        return false
+    }
+
+    private fun hasGenericParent(klass: KSClassDeclaration): Boolean {
+        var parent = klass.parentDeclaration
+        while (parent is KSClassDeclaration) {
+            if (parent.typeParameters.isNotEmpty()) return true
+            parent = parent.parentDeclaration
+        }
+        return false
+    }
+
+    private fun effectiveVisibility(klass: KSClassDeclaration): Modifier =
+        if (Modifier.INTERNAL in klass.modifiers || hasInternalParent(klass) || hasGenericParent(klass)) Modifier.INTERNAL else Modifier.PUBLIC
+
+    private fun hasInternalParent(klass: KSClassDeclaration): Boolean {
+        var parent = klass.parentDeclaration
+        while (parent is KSClassDeclaration) {
+            if (Modifier.INTERNAL in parent.modifiers) return true
+            parent = parent.parentDeclaration
+        }
+        return false
+    }
+
+    private fun classId(klass: KSClassDeclaration): String = canonicalName(klass)
+
+    private fun canonicalName(declaration: KSDeclaration): String {
+        val names = mutableListOf<String>()
+        var current: KSDeclaration? = declaration
+        while (current != null && current !is KSFile) {
+            names.add(0, current.simpleName.asString())
+            current = current.parentDeclaration
+        }
+        val packageName = declaration.packageName.asString()
+        return if (packageName.isBlank()) names.joinToString(".") else "${packageName}.${names.joinToString(".")}"
+    }
+
+    private fun KSClassDeclaration.toClassNameCompat(): ClassName {
+        val names = mutableListOf<String>()
+        var current: KSDeclaration? = this
+        while (current != null && current !is KSFile) {
+            names.add(0, current.simpleName.asString())
+            current = current.parentDeclaration
+        }
+        return ClassName(packageName.asString(), names)
+    }
+
+    private fun KSType.toClassNameOrNull(): ClassName? = runCatching { toClassName() }.getOrNull()
+
+    private fun KSType.generatedTypeName(): TypeName = this.ksToTypeName(TypeParameterResolver.EMPTY)
+
+    private fun propertyKey(property: KSPropertyDeclaration): String {
+        val parent = property.parentDeclaration
+        val prefix = if (parent is KSDeclaration) canonicalName(parent) else property.toString()
+        return "$prefix#${property.simpleName.asString()}"
+    }
+
+    private fun schemaNameFor(klass: KSClassDeclaration): String? {
+        val id = classId(klass)
+        schemaNames[id]?.let { return it }
+        val chain = mutableListOf<String>()
+        var current: KSDeclaration? = klass
+        while (current != null && current !is KSFile) {
+            chain.add(0, current.simpleName.asString())
+            current = current.parentDeclaration
+        }
+        val base = sanitizeIdentifier(chain.joinToString("_") + "Schema")
+        var candidate = base
+        fun key(name: String): String = "${klass.packageName.asString()}:$name"
+        if (usedSchemaNames.containsKey(key(candidate)) && usedSchemaNames[key(candidate)] != id) {
+            candidate = "${base}_${stableSuffix(id)}"
+        }
+        var index = 2
+        while (usedSchemaNames.containsKey(key(candidate)) && usedSchemaNames[key(candidate)] != id) {
+            candidate = "${base}_${stableSuffix(id)}_$index"
+            index++
+        }
+        usedSchemaNames[key(candidate)] = id
+        schemaNames[id] = candidate
+        return candidate
+    }
+
+    private fun sanitizeIdentifier(value: String): String {
+        val builder = StringBuilder()
+        for (character in value) {
+            if (character.isLetterOrDigit() || character == '_') builder.append(character)
+            else builder.append('_')
+        }
+        if (builder.isEmpty() || builder.first().isDigit()) builder.insert(0, '_')
+        return builder.toString()
+    }
+
+    private fun stableSuffix(value: String): String = value.hashCode().toUInt().toString(16)
+
+    @OptIn(KspExperimental::class)
+    private fun schemaNameConflictsWithSource(
+        resolver: Resolver,
+        klass: KSClassDeclaration,
+        schemaName: String,
+    ): Boolean {
+        val packageName = klass.packageName.asString()
+        val qname = if (packageName.isBlank()) schemaName else "$packageName.$schemaName"
+        val existing = runCatching { resolver.getClassDeclarationByName(resolver.getKSNameFromString(qname)) }.getOrNull()
+        if (existing != null && canonicalName(existing) != classId(klass)) return true
+        return resolver.getDeclarationsFromPackage(packageName)
+            .filter { it.simpleName.asString() == schemaName }
+            .any { it !is KSClassDeclaration || canonicalName(it) != classId(klass) }
     }
 
 }

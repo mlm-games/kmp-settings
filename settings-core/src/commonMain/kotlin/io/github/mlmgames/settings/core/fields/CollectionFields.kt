@@ -19,27 +19,30 @@ class StringListField<T>(
     private val setter: (T, List<String>) -> T,
     private val json: Json = SerializedField.DefaultJson,
 ) : SettingField<T, List<String>> {
-    private val key = stringPreferencesKey(keyName)
+    private val key = stringPreferencesKey(storageKeyName(keyName, "string_list"))
+    private val legacyKey = stringPreferencesKey(keyName)
     private val serializer = ListSerializer(String.serializer())
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, legacyKey)
 
     override fun get(model: T): List<String> = getter(model)
     override fun set(model: T, value: List<String>): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): List<String>? {
-        val jsonString = prefs[key] ?: return null
-        return try { json.decodeFromString(serializer, jsonString) } catch (e: Exception) { null }
+        val stored = prefs.safeGet(key) ?: prefs.safeGet(legacyKey) ?: return null
+        return try { json.decodeFromString(serializer, stored) } catch (_: Exception) { null }
     }
-
     override fun write(prefs: MutablePreferences, value: List<String>) {
-        prefs[key] = json.encodeToString(serializer, value)
+        val encoded = json.encodeToString(serializer, value)
+        prefs[key] = encoded
+        prefs[legacyKey] = encoded
     }
-
-    override fun encodeValue(value: List<String>): String = "j:" + json.encodeToString(serializer, value)
-    override fun decodeValue(encoded: String): List<String> = json.decodeFromString(serializer, encoded.substringAfter(':'))
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override fun encodeValue(value: List<String>): String =
+        FieldEncoding.encode(FieldEncoding.SERIALIZED, json.encodeToString(serializer, value))
+    override fun decodeValue(encoded: String): List<String> {
+        val tagged = FieldEncoding.tagged(encoded, FieldEncoding.STRING_LIST, FieldEncoding.SERIALIZED)
+        return json.decodeFromString(serializer, tagged.payload)
+    }
 }
 
 class IntListField<T>(
@@ -50,27 +53,30 @@ class IntListField<T>(
     private val setter: (T, List<Int>) -> T,
     private val json: Json = SerializedField.DefaultJson,
 ) : SettingField<T, List<Int>> {
-    private val key = stringPreferencesKey(keyName)
+    private val key = stringPreferencesKey(storageKeyName(keyName, "int_list"))
+    private val legacyKey = stringPreferencesKey(keyName)
     private val serializer = ListSerializer(Int.serializer())
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, legacyKey)
 
     override fun get(model: T): List<Int> = getter(model)
     override fun set(model: T, value: List<Int>): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): List<Int>? {
-        val jsonString = prefs[key] ?: return null
-        return try { json.decodeFromString(serializer, jsonString) } catch (e: Exception) { null }
+        val stored = prefs.safeGet(key) ?: prefs.safeGet(legacyKey) ?: return null
+        return try { json.decodeFromString(serializer, stored) } catch (_: Exception) { null }
     }
-
     override fun write(prefs: MutablePreferences, value: List<Int>) {
-        prefs[key] = json.encodeToString(serializer, value)
+        val encoded = json.encodeToString(serializer, value)
+        prefs[key] = encoded
+        prefs[legacyKey] = encoded
     }
-
-    override fun encodeValue(value: List<Int>): String = "j:" + json.encodeToString(serializer, value)
-    override fun decodeValue(encoded: String): List<Int> = json.decodeFromString(serializer, encoded.substringAfter(':'))
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override fun encodeValue(value: List<Int>): String =
+        FieldEncoding.encode(FieldEncoding.SERIALIZED, json.encodeToString(serializer, value))
+    override fun decodeValue(encoded: String): List<Int> {
+        val tagged = FieldEncoding.tagged(encoded, FieldEncoding.INT_LIST, FieldEncoding.SERIALIZED)
+        return json.decodeFromString(serializer, tagged.payload)
+    }
 }
 
 class LongListField<T>(
@@ -81,32 +87,32 @@ class LongListField<T>(
     private val setter: (T, List<Long>) -> T,
     private val json: Json = SerializedField.DefaultJson,
 ) : SettingField<T, List<Long>> {
-    private val key = stringPreferencesKey(keyName)
+    private val key = stringPreferencesKey(storageKeyName(keyName, "long_list"))
+    private val legacyKey = stringPreferencesKey(keyName)
     private val serializer = ListSerializer(Long.serializer())
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, legacyKey)
 
     override fun get(model: T): List<Long> = getter(model)
     override fun set(model: T, value: List<Long>): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): List<Long>? {
-        val jsonString = prefs[key] ?: return null
-        return try { json.decodeFromString(serializer, jsonString) } catch (e: Exception) { null }
+        val stored = prefs.safeGet(key) ?: prefs.safeGet(legacyKey) ?: return null
+        return try { json.decodeFromString(serializer, stored) } catch (_: Exception) { null }
     }
-
     override fun write(prefs: MutablePreferences, value: List<Long>) {
-        prefs[key] = json.encodeToString(serializer, value)
+        val encoded = json.encodeToString(serializer, value)
+        prefs[key] = encoded
+        prefs[legacyKey] = encoded
     }
-
-    override fun encodeValue(value: List<Long>): String = "j:" + json.encodeToString(serializer, value)
-    override fun decodeValue(encoded: String): List<Long> = json.decodeFromString(serializer, encoded.substringAfter(':'))
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override fun encodeValue(value: List<Long>): String =
+        FieldEncoding.encode(FieldEncoding.SERIALIZED, json.encodeToString(serializer, value))
+    override fun decodeValue(encoded: String): List<Long> {
+        val tagged = FieldEncoding.tagged(encoded, FieldEncoding.LONG_LIST, FieldEncoding.SERIALIZED)
+        return json.decodeFromString(serializer, tagged.payload)
+    }
 }
 
-/**
- * Base class for map fields that stores maps as JSON strings.
- */
 abstract class BaseMapField<T, K, V>(
     override val name: String,
     override val keyName: String,
@@ -116,34 +122,29 @@ abstract class BaseMapField<T, K, V>(
     private val serializer: KSerializer<Map<K, V>>,
     private val json: Json = SerializedField.DefaultJson,
 ) : SettingField<T, Map<K, V>> {
-    private val key = stringPreferencesKey(keyName)
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = stringPreferencesKey(storageKeyName(keyName, "map"))
+    private val legacyKey = stringPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, legacyKey)
 
     override fun get(model: T): Map<K, V> = getter(model)
     override fun set(model: T, value: Map<K, V>): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): Map<K, V>? {
-        val jsonString = prefs[key] ?: return null
-        return try {
-            json.decodeFromString(serializer, jsonString)
-        } catch (e: Exception) {
-            null
-        }
+        val stored = prefs.safeGet(key) ?: prefs.safeGet(legacyKey) ?: return null
+        return try { json.decodeFromString(serializer, stored) } catch (_: Exception) { null }
     }
-
-    /**
-     * Serialization of maps is infallible for supported serializers; let
-     * failures propagate so callers can distinguish success from data loss.
-     */
     override fun write(prefs: MutablePreferences, value: Map<K, V>) {
-        prefs[key] = json.encodeToString(serializer, value)
+        val encoded = json.encodeToString(serializer, value)
+        prefs[key] = encoded
+        prefs[legacyKey] = encoded
     }
-
-    override fun encodeValue(value: Map<K, V>): String = "j:" + json.encodeToString(serializer, value)
-    override fun decodeValue(encoded: String): Map<K, V> = json.decodeFromString(serializer, encoded.substringAfter(':'))
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override fun encodeValue(value: Map<K, V>): String =
+        FieldEncoding.encode(FieldEncoding.SERIALIZED, json.encodeToString(serializer, value))
+    override fun decodeValue(encoded: String): Map<K, V> {
+        val tagged = FieldEncoding.tagged(encoded, FieldEncoding.SERIALIZED)
+        return json.decodeFromString(serializer, tagged.payload)
+    }
 }
 
 class StringMapField<T>(
@@ -155,8 +156,7 @@ class StringMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, String, String>(
     name, keyName, meta, getter, setter,
-    MapSerializer(String.serializer(), String.serializer()),
-    json
+    MapSerializer(String.serializer(), String.serializer()), json,
 )
 
 class StringIntMapField<T>(
@@ -168,8 +168,7 @@ class StringIntMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, String, Int>(
     name, keyName, meta, getter, setter,
-    MapSerializer(String.serializer(), Int.serializer()),
-    json
+    MapSerializer(String.serializer(), Int.serializer()), json,
 )
 
 class StringLongMapField<T>(
@@ -181,8 +180,7 @@ class StringLongMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, String, Long>(
     name, keyName, meta, getter, setter,
-    MapSerializer(String.serializer(), Long.serializer()),
-    json
+    MapSerializer(String.serializer(), Long.serializer()), json,
 )
 
 class StringFloatMapField<T>(
@@ -194,8 +192,7 @@ class StringFloatMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, String, Float>(
     name, keyName, meta, getter, setter,
-    MapSerializer(String.serializer(), Float.serializer()),
-    json
+    MapSerializer(String.serializer(), Float.serializer()), json,
 )
 
 class StringDoubleMapField<T>(
@@ -207,8 +204,7 @@ class StringDoubleMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, String, Double>(
     name, keyName, meta, getter, setter,
-    MapSerializer(String.serializer(), Double.serializer()),
-    json
+    MapSerializer(String.serializer(), Double.serializer()), json,
 )
 
 class StringBooleanMapField<T>(
@@ -220,8 +216,7 @@ class StringBooleanMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, String, Boolean>(
     name, keyName, meta, getter, setter,
-    MapSerializer(String.serializer(), Boolean.serializer()),
-    json
+    MapSerializer(String.serializer(), Boolean.serializer()), json,
 )
 
 class IntStringMapField<T>(
@@ -233,8 +228,7 @@ class IntStringMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, Int, String>(
     name, keyName, meta, getter, setter,
-    MapSerializer(Int.serializer(), String.serializer()),
-    json
+    MapSerializer(Int.serializer(), String.serializer()), json,
 )
 
 class IntIntMapField<T>(
@@ -246,8 +240,7 @@ class IntIntMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, Int, Int>(
     name, keyName, meta, getter, setter,
-    MapSerializer(Int.serializer(), Int.serializer()),
-    json
+    MapSerializer(Int.serializer(), Int.serializer()), json,
 )
 
 class IntLongMapField<T>(
@@ -259,10 +252,8 @@ class IntLongMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, Int, Long>(
     name, keyName, meta, getter, setter,
-    MapSerializer(Int.serializer(), Long.serializer()),
-    json
+    MapSerializer(Int.serializer(), Long.serializer()), json,
 )
-
 
 class LongStringMapField<T>(
     name: String,
@@ -273,8 +264,7 @@ class LongStringMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, Long, String>(
     name, keyName, meta, getter, setter,
-    MapSerializer(Long.serializer(), String.serializer()),
-    json
+    MapSerializer(Long.serializer(), String.serializer()), json,
 )
 
 class LongLongMapField<T>(
@@ -286,8 +276,7 @@ class LongLongMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, Long, Long>(
     name, keyName, meta, getter, setter,
-    MapSerializer(Long.serializer(), Long.serializer()),
-    json
+    MapSerializer(Long.serializer(), Long.serializer()), json,
 )
 
 class LongIntMapField<T>(
@@ -299,6 +288,5 @@ class LongIntMapField<T>(
     json: Json = SerializedField.DefaultJson,
 ) : BaseMapField<T, Long, Int>(
     name, keyName, meta, getter, setter,
-    MapSerializer(Long.serializer(), Int.serializer()),
-    json
+    MapSerializer(Long.serializer(), Int.serializer()), json,
 )

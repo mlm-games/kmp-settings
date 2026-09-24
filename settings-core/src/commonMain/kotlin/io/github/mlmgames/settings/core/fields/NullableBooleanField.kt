@@ -1,8 +1,14 @@
 package io.github.mlmgames.settings.core.fields
 
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.mlmgames.settings.core.SettingField
+import io.github.mlmgames.settings.core.SettingFieldCapability
 import io.github.mlmgames.settings.core.SettingMeta
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 class NullableBooleanField<T>(
     override val name: String,
@@ -15,48 +21,72 @@ class NullableBooleanField<T>(
         internal const val NULL_MARKER = "__NULL__"
     }
 
-    internal val key = stringPreferencesKey("${keyName}_nullable")
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    internal val key = booleanPreferencesKey(storageKeyName(keyName, "nullable_boolean"))
+    private val nullKey = booleanPreferencesKey(nullStorageKeyName(keyName, "nullable_boolean"))
+    private val legacyKey = stringPreferencesKey("${keyName}_nullable")
+    private val legacyDirectKey = booleanPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey, legacyDirectKey)
 
     override fun get(model: T): Boolean? = getter(model)
     override fun set(model: T, value: Boolean?): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun isExplicitNull(prefs: Preferences): Boolean =
-        prefs[key] == NULL_MARKER
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
-    override fun read(prefs: Preferences): Boolean? = when (prefs[key]) {
-        "true" -> true
-        "false" -> false
-        // Explicit-null marker, absent key, or corrupt value all decode to null.
-        // Use hasValue()/isExplicitNull() to distinguish.
-        else -> null
+    override fun read(prefs: Preferences): Boolean? {
+        if (nullKey in prefs) return null
+        if (key in prefs) return prefs.safeGet(key)
+        val legacy = prefs.safeGet(legacyKey)
+        if (legacy != null) {
+            return when (legacy) {
+                "true" -> true
+                "false" -> false
+                else -> null
+            }
+        }
+        return prefs.safeGet(legacyDirectKey)
     }
-
     override fun write(prefs: MutablePreferences, value: Boolean?) {
-        when (value) {
-            true -> prefs[key] = "true"
-            false -> prefs[key] = "false"
-            // Explicit marker (not key removal) so explicit null survives
-            // export/import, snapshots, and undo. Absent key = never set.
-            null -> prefs[key] = NULL_MARKER
+        prefs.removeAny(physicalKeys)
+        if (value == null) {
+            prefs[nullKey] = true
+            prefs.remove(legacyKey)
+            prefs.remove(legacyDirectKey)
+        } else {
+            prefs[key] = value
+            prefs[legacyKey] = value.toString()
+            prefs[legacyDirectKey] = value
         }
     }
-
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        nullKey in prefs || (key !in prefs && prefs.safeGet(legacyKey) == NULL_MARKER)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override val supportsExplicitNull: Boolean
+        get() = true
+    override fun toUiToggleValue(model: T): Boolean? = getter(model)
+    override fun fromUiToggleValue(value: Boolean): Boolean? = value
+    override val capabilities: Set<SettingFieldCapability>
+        get() = setOf(SettingFieldCapability.TOGGLE)
     override fun encodeValue(value: Boolean?): String = when (value) {
-        true -> "b:true"
-        false -> "b:false"
-        null -> "b:"
+        true -> FieldEncoding.encode(FieldEncoding.BOOLEAN, "true")
+        false -> FieldEncoding.encode(FieldEncoding.BOOLEAN, "false")
+        null -> FieldEncoding.encode(FieldEncoding.NULL, "")
     }
-
     override fun decodeValue(encoded: String): Boolean? {
-        val v = encoded.substringAfter(':')
-        return when (v) {
-            "true" -> true
-            "false" -> false
-            "" -> null
-            else -> throw IllegalArgumentException("Invalid nullable boolean value: $encoded")
+        val tagged = FieldEncoding.tagged(
+            encoded,
+            FieldEncoding.NULL,
+            FieldEncoding.NULLABLE_BOOLEAN,
+            FieldEncoding.BOOLEAN,
+        )
+        return when (tagged.tag) {
+            FieldEncoding.NULL -> {
+                if (tagged.payload.isEmpty()) null
+                else throw IllegalArgumentException("Invalid null payload: $encoded")
+            }
+            FieldEncoding.NULLABLE_BOOLEAN -> FieldEncoding.parseBoolean(tagged.payload)
+            FieldEncoding.BOOLEAN -> when (tagged.payload) {
+                "", NULL_MARKER -> null
+                else -> FieldEncoding.parseBoolean(tagged.payload)
+            }
+            else -> throw IllegalArgumentException("Invalid nullable Boolean value: $encoded")
         }
     }
 }
@@ -72,43 +102,96 @@ class NullableIntField<T>(
         private const val NULL_SENTINEL = Long.MIN_VALUE
     }
 
-    internal val key = longPreferencesKey("${keyName}_nullable")
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = androidx.datastore.preferences.core.intPreferencesKey(
+        storageKeyName(keyName, "nullable_int"),
+    )
+    private val nullKey = booleanPreferencesKey(nullStorageKeyName(keyName, "nullable_int"))
+    private val legacyKey = androidx.datastore.preferences.core.longPreferencesKey("${keyName}_nullable")
+    private val legacyDirectKey = androidx.datastore.preferences.core.intPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey, legacyDirectKey)
 
     override fun get(model: T): Int? = getter(model)
     override fun set(model: T, value: Int?): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun isExplicitNull(prefs: Preferences): Boolean =
-        prefs[key] == NULL_SENTINEL
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): Int? {
-        val stored = prefs[key] ?: return null
-        return if (stored == NULL_SENTINEL) null else stored.toInt()
-    }
-
-    override fun write(prefs: MutablePreferences, value: Int?) {
-        prefs[key] = value?.toLong() ?: NULL_SENTINEL
-    }
-
-    override fun encodeValue(value: Int?): String {
-        val v = value ?: NULL_SENTINEL
-        return "i:$v"
-    }
-
-    override fun decodeValue(encoded: String): Int? {
-        val v = encoded.substringAfter(':').toLongOrNull()
-            ?: throw IllegalArgumentException("Invalid nullable int value: $encoded")
-        if (v == NULL_SENTINEL) return null
-        if (v < Int.MIN_VALUE || v > Int.MAX_VALUE) {
-            throw IllegalArgumentException("Int value out of range: $encoded")
+        if (nullKey in prefs) return null
+        if (key in prefs) return prefs.safeGet(key)
+        val legacy = prefs.safeGet(legacyKey)
+        if (legacy != null) {
+            if (legacy == NULL_SENTINEL) return null
+            return if (legacy in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) legacy.toInt() else null
         }
-        return v.toInt()
+        return prefs.safeGet(legacyDirectKey)
     }
-
+    override fun write(prefs: MutablePreferences, value: Int?) {
+        prefs.removeAny(physicalKeys)
+        if (value == null) {
+            prefs[nullKey] = true
+            prefs[legacyKey] = NULL_SENTINEL
+            prefs.remove(legacyDirectKey)
+        } else {
+            prefs[key] = value
+            prefs[legacyKey] = value.toLong()
+            prefs[legacyDirectKey] = value
+        }
+    }
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        nullKey in prefs || (key !in prefs && prefs.safeGet(legacyKey) == NULL_SENTINEL)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override val supportsExplicitNull: Boolean
+        get() = true
     override fun toUiSliderValue(model: T): Float? = getter(model)?.toFloat()
-    override fun fromUiSliderValue(value: Float): Int? = value.toInt()
+    override fun fromUiSliderValue(value: Float): Int? {
+        if (!sliderInputAllowed(meta, value)) return null
+        return value.roundToInt().takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
+    }
+    override fun toUiDropdownIndex(model: T): Int? {
+        val value = getter(model) ?: return null
+        return value.takeIf { dropdownIndexAllowed(meta, it) }
+    }
+    override fun fromUiDropdownIndex(index: Int): Int? =
+        if (index == -1) null else index.takeIf { dropdownIndexAllowed(meta, it) }
+    override fun getDropdownOptions(): List<String>? =
+        dropdownOptions(meta).takeIf { it.isNotEmpty() }
+    override val capabilities: Set<SettingFieldCapability>
+        get() = setOf(SettingFieldCapability.SLIDER, SettingFieldCapability.DROPDOWN)
+    override fun encodeValue(value: Int?): String = when (value) {
+        null -> FieldEncoding.encode(FieldEncoding.NULL, "")
+        else -> FieldEncoding.encode(FieldEncoding.INT, value.toString())
+    }
+    override fun decodeValue(encoded: String): Int? {
+        val tagged = FieldEncoding.tagged(
+            encoded,
+            FieldEncoding.NULL,
+            FieldEncoding.NULLABLE_INT,
+            FieldEncoding.INT,
+        )
+        return when (tagged.tag) {
+            FieldEncoding.NULL -> {
+                if (tagged.payload.isEmpty()) null
+                else throw IllegalArgumentException("Invalid null payload: $encoded")
+            }
+            FieldEncoding.NULLABLE_INT -> {
+                val number = tagged.payload.toLongOrNull()
+                    ?: throw IllegalArgumentException("Invalid nullable Int value: $encoded")
+                if (number !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
+                    throw IllegalArgumentException("Int value out of range: $encoded")
+                }
+                number.toInt()
+            }
+            FieldEncoding.INT -> {
+                if (tagged.payload.isEmpty()) return null
+                val number = tagged.payload.toLongOrNull()
+                    ?: throw IllegalArgumentException("Invalid nullable Int value: $encoded")
+                if (number == NULL_SENTINEL) return null
+                if (number !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
+                    throw IllegalArgumentException("Int value out of range: $encoded")
+                }
+                number.toInt()
+            }
+            else -> throw IllegalArgumentException("Invalid nullable Int value: $encoded")
+        }
+    }
 }
 
 class NullableLongField<T>(
@@ -122,39 +205,85 @@ class NullableLongField<T>(
         internal const val NULL_MARKER = "__NULL__"
     }
 
-    internal val key = stringPreferencesKey("${keyName}_nullable_long")
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = androidx.datastore.preferences.core.longPreferencesKey(
+        storageKeyName(keyName, "nullable_long"),
+    )
+    private val nullKey = booleanPreferencesKey(nullStorageKeyName(keyName, "nullable_long"))
+    private val legacyKey = stringPreferencesKey("${keyName}_nullable_long")
+    private val legacyDirectKey = androidx.datastore.preferences.core.longPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey, legacyDirectKey)
 
     override fun get(model: T): Long? = getter(model)
     override fun set(model: T, value: Long?): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun isExplicitNull(prefs: Preferences): Boolean =
-        prefs[key] == NULL_MARKER
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): Long? {
-        val stored = prefs[key] ?: return null
-        if (stored == NULL_MARKER) return null
-        // Corrupt (non-numeric) values decode to null; hasValue() stays true
-        // and isExplicitNull() false so callers can tell corruption from null.
-        return stored.toLongOrNull()
+        if (nullKey in prefs) return null
+        if (key in prefs) return prefs.safeGet(key)
+        val legacy = prefs.safeGet(legacyKey)
+        if (legacy != null) {
+            if (legacy == NULL_MARKER) return null
+            return legacy.toLongOrNull()
+        }
+        return prefs.safeGet(legacyDirectKey)
     }
-
     override fun write(prefs: MutablePreferences, value: Long?) {
-        prefs[key] = value?.toString() ?: NULL_MARKER
+        prefs.removeAny(physicalKeys)
+        if (value == null) {
+            prefs[nullKey] = true
+            prefs.remove(legacyKey)
+            prefs.remove(legacyDirectKey)
+        } else {
+            prefs[key] = value
+            prefs[legacyKey] = value.toString()
+            prefs[legacyDirectKey] = value
+        }
     }
-
-    override fun encodeValue(value: Long?): String {
-        if (value == null) return "l:"
-        return "l:$value"
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        nullKey in prefs || (key !in prefs && prefs.safeGet(legacyKey) == NULL_MARKER)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override val supportsExplicitNull: Boolean
+        get() = true
+    override fun toUiSliderValue(model: T): Float? = getter(model)?.toFloat()
+    override fun fromUiSliderValue(value: Float): Long? {
+        if (!sliderInputAllowed(meta, value)) return null
+        val rounded = value.roundToLong()
+        return rounded.takeIf { it in Long.MIN_VALUE..Long.MAX_VALUE }
     }
-
+    override fun toUiDropdownIndex(model: T): Int? {
+        val value = getter(model) ?: return null
+        if (value !in 0L..Int.MAX_VALUE.toLong()) return null
+        val index = value.toInt()
+        return index.takeIf { dropdownIndexAllowed(meta, it) }
+    }
+    override fun fromUiDropdownIndex(index: Int): Long? =
+        if (index == -1) null else index.takeIf { dropdownIndexAllowed(meta, it) }?.toLong()
+    override fun getDropdownOptions(): List<String>? =
+        dropdownOptions(meta).takeIf { it.isNotEmpty() }
+    override val capabilities: Set<SettingFieldCapability>
+        get() = setOf(SettingFieldCapability.SLIDER, SettingFieldCapability.DROPDOWN)
+    override fun encodeValue(value: Long?): String = when (value) {
+        null -> FieldEncoding.encode(FieldEncoding.NULL, "")
+        else -> FieldEncoding.encode(FieldEncoding.LONG, value.toString())
+    }
     override fun decodeValue(encoded: String): Long? {
-        val v = encoded.substringAfter(':')
-        if (v.isEmpty()) return null
-        return v.toLongOrNull()
-            ?: throw IllegalArgumentException("Invalid nullable long value: $encoded")
+        val tagged = FieldEncoding.tagged(
+            encoded,
+            FieldEncoding.NULL,
+            FieldEncoding.NULLABLE_LONG,
+            FieldEncoding.LONG,
+        )
+        return when (tagged.tag) {
+            FieldEncoding.NULL -> {
+                if (tagged.payload.isEmpty()) null
+                else throw IllegalArgumentException("Invalid null payload: $encoded")
+            }
+            FieldEncoding.NULLABLE_LONG -> FieldEncoding.parseLong(tagged.payload)
+            FieldEncoding.LONG -> when (tagged.payload) {
+                "", NULL_MARKER -> null
+                else -> FieldEncoding.parseLong(tagged.payload)
+            }
+            else -> throw IllegalArgumentException("Invalid nullable Long value: $encoded")
+        }
     }
 }
 
@@ -165,41 +294,77 @@ class NullableFloatField<T>(
     private val getter: (T) -> Float?,
     private val setter: (T, Float?) -> T,
 ) : SettingField<T, Float?> {
-    internal val key = floatPreferencesKey("${keyName}_nullable")
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = androidx.datastore.preferences.core.floatPreferencesKey(
+        storageKeyName(keyName, "nullable_float"),
+    )
+    private val nullKey = booleanPreferencesKey(nullStorageKeyName(keyName, "nullable_float"))
+    private val legacyKey = androidx.datastore.preferences.core.floatPreferencesKey("${keyName}_nullable")
+    private val legacyDirectKey = androidx.datastore.preferences.core.floatPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey, legacyDirectKey)
 
     override fun get(model: T): Float? = getter(model)
     override fun set(model: T, value: Float?): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun isExplicitNull(prefs: Preferences): Boolean =
-        (prefs[key]?.isNaN() == true)
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): Float? {
-        val stored = prefs[key] ?: return null
-        // NaN is the explicit-null marker. A genuine NaN setting value is
-        // indistinguishable from null and reads back as null (documented).
-        return if (stored.isNaN()) null else stored
+        if (nullKey in prefs) return null
+        if (key in prefs) return prefs.safeGet(key)
+        val legacy = prefs.safeGet(legacyKey)
+        if (legacy != null) return if (legacy.isNaN()) null else legacy
+        return prefs.safeGet(legacyDirectKey)
     }
-
     override fun write(prefs: MutablePreferences, value: Float?) {
-        prefs[key] = value ?: Float.NaN
+        prefs.removeAny(physicalKeys)
+        if (value == null) {
+            prefs[nullKey] = true
+            prefs[legacyKey] = Float.NaN
+            prefs.remove(legacyDirectKey)
+        } else {
+            prefs[key] = value
+            prefs[legacyKey] = value
+            prefs[legacyDirectKey] = value
+        }
     }
-
-    override fun toUiSliderValue(model: T): Float? = getter(model)
-    override fun fromUiSliderValue(value: Float): Float? = value
-
-    override fun encodeValue(value: Float?): String {
-        if (value == null) return "f:"
-        return "f:$value"
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        nullKey in prefs || (key !in prefs && prefs.safeGet(legacyKey)?.isNaN() == true)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override val supportsExplicitNull: Boolean
+        get() = true
+    override fun toUiSliderValue(model: T): Float? = getter(model)?.takeIf { it.isFinite() }
+    override fun fromUiSliderValue(value: Float): Float? =
+        value.takeIf { sliderInputAllowed(meta, it) }
+    override fun toUiDropdownIndex(model: T): Int? {
+        val value = getter(model) ?: return null
+        if (!value.isFinite() || value < 0f || value > Int.MAX_VALUE.toFloat()) return null
+        val index = value.toInt()
+        return index.takeIf { it.toFloat() == value && dropdownIndexAllowed(meta, it) }
     }
-
+    override fun fromUiDropdownIndex(index: Int): Float? =
+        if (index == -1) null else index.takeIf { dropdownIndexAllowed(meta, it) }?.toFloat()
+    override fun getDropdownOptions(): List<String>? =
+        dropdownOptions(meta).takeIf { it.isNotEmpty() }
+    override val capabilities: Set<SettingFieldCapability>
+        get() = setOf(SettingFieldCapability.SLIDER, SettingFieldCapability.DROPDOWN)
+    override fun encodeValue(value: Float?): String = when (value) {
+        null -> FieldEncoding.encode(FieldEncoding.NULL, "")
+        else -> FieldEncoding.encode(FieldEncoding.FLOAT, value.toString())
+    }
     override fun decodeValue(encoded: String): Float? {
-        val v = encoded.substringAfter(':')
-        if (v.isEmpty()) return null
-        return v.toFloatOrNull()
-            ?: throw IllegalArgumentException("Invalid nullable float value: $encoded")
+        val tagged = FieldEncoding.tagged(
+            encoded,
+            FieldEncoding.NULL,
+            FieldEncoding.NULLABLE_FLOAT,
+            FieldEncoding.FLOAT,
+        )
+        return when (tagged.tag) {
+            FieldEncoding.NULL -> {
+                if (tagged.payload.isEmpty()) null
+                else throw IllegalArgumentException("Invalid null payload: $encoded")
+            }
+            FieldEncoding.NULLABLE_FLOAT -> FieldEncoding.parseFloat(tagged.payload)
+            FieldEncoding.FLOAT -> if (tagged.payload.isEmpty()) null
+            else FieldEncoding.parseFloat(tagged.payload)
+            else -> throw IllegalArgumentException("Invalid nullable Float value: $encoded")
+        }
     }
 }
 
@@ -210,37 +375,77 @@ class NullableDoubleField<T>(
     private val getter: (T) -> Double?,
     private val setter: (T, Double?) -> T,
 ) : SettingField<T, Double?> {
-    internal val key = doublePreferencesKey("${keyName}_nullable")
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = androidx.datastore.preferences.core.doublePreferencesKey(
+        storageKeyName(keyName, "nullable_double"),
+    )
+    private val nullKey = booleanPreferencesKey(nullStorageKeyName(keyName, "nullable_double"))
+    private val legacyKey = androidx.datastore.preferences.core.doublePreferencesKey("${keyName}_nullable")
+    private val legacyDirectKey = androidx.datastore.preferences.core.doublePreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey, legacyDirectKey)
 
     override fun get(model: T): Double? = getter(model)
     override fun set(model: T, value: Double?): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun isExplicitNull(prefs: Preferences): Boolean =
-        (prefs[key]?.isNaN() == true)
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): Double? {
-        val stored = prefs[key] ?: return null
-        // NaN is the explicit-null marker (see NullableFloatField).
-        return if (stored.isNaN()) null else stored
+        if (nullKey in prefs) return null
+        if (key in prefs) return prefs.safeGet(key)
+        val legacy = prefs.safeGet(legacyKey)
+        if (legacy != null) return if (legacy.isNaN()) null else legacy
+        return prefs.safeGet(legacyDirectKey)
     }
-
     override fun write(prefs: MutablePreferences, value: Double?) {
-        prefs[key] = value ?: Double.NaN
+        prefs.removeAny(physicalKeys)
+        if (value == null) {
+            prefs[nullKey] = true
+            prefs[legacyKey] = Double.NaN
+            prefs.remove(legacyDirectKey)
+        } else {
+            prefs[key] = value
+            prefs[legacyKey] = value
+            prefs[legacyDirectKey] = value
+        }
     }
-
-    override fun encodeValue(value: Double?): String {
-        if (value == null) return "d:"
-        return "d:$value"
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        nullKey in prefs || (key !in prefs && prefs.safeGet(legacyKey)?.isNaN() == true)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override val supportsExplicitNull: Boolean
+        get() = true
+    override fun toUiSliderValue(model: T): Float? = getter(model)?.takeIf { it.isFinite() }?.toFloat()
+    override fun fromUiSliderValue(value: Float): Double? =
+        value.takeIf { sliderInputAllowed(meta, it) }?.let(::uiFloatToDouble)
+    override fun toUiDropdownIndex(model: T): Int? {
+        val value = getter(model) ?: return null
+        if (!value.isFinite() || value < 0.0 || value > Int.MAX_VALUE.toDouble()) return null
+        val index = value.toInt()
+        return index.takeIf { it.toDouble() == value && dropdownIndexAllowed(meta, it) }
     }
-
+    override fun fromUiDropdownIndex(index: Int): Double? =
+        if (index == -1) null else index.takeIf { dropdownIndexAllowed(meta, it) }?.toDouble()
+    override fun getDropdownOptions(): List<String>? =
+        dropdownOptions(meta).takeIf { it.isNotEmpty() }
+    override val capabilities: Set<SettingFieldCapability>
+        get() = setOf(SettingFieldCapability.SLIDER, SettingFieldCapability.DROPDOWN)
+    override fun encodeValue(value: Double?): String = when (value) {
+        null -> FieldEncoding.encode(FieldEncoding.NULL, "")
+        else -> FieldEncoding.encode(FieldEncoding.DOUBLE, value.toString())
+    }
     override fun decodeValue(encoded: String): Double? {
-        val v = encoded.substringAfter(':')
-        if (v.isEmpty()) return null
-        return v.toDoubleOrNull()
-            ?: throw IllegalArgumentException("Invalid nullable double value: $encoded")
+        val tagged = FieldEncoding.tagged(
+            encoded,
+            FieldEncoding.NULL,
+            FieldEncoding.NULLABLE_DOUBLE,
+            FieldEncoding.DOUBLE,
+        )
+        return when (tagged.tag) {
+            FieldEncoding.NULL -> {
+                if (tagged.payload.isEmpty()) null
+                else throw IllegalArgumentException("Invalid null payload: $encoded")
+            }
+            FieldEncoding.NULLABLE_DOUBLE -> FieldEncoding.parseDouble(tagged.payload)
+            FieldEncoding.DOUBLE -> if (tagged.payload.isEmpty()) null
+            else FieldEncoding.parseDouble(tagged.payload)
+            else -> throw IllegalArgumentException("Invalid nullable Double value: $encoded")
+        }
     }
 }
 
@@ -252,37 +457,84 @@ class NullableStringField<T>(
     private val setter: (T, String?) -> T,
 ) : SettingField<T, String?> {
     companion object {
-        internal const val NULL_SENTINEL = "__NULL__"
+        internal const val NULL_SENTINEL = "\u0000__NULL__\u0000"
+        internal const val CURRENT_NULL_SENTINEL = "__NULL__"
     }
 
-    internal val key = stringPreferencesKey("${keyName}_nullable")
-    internal val physicalKeys: List<Preferences.Key<*>> = listOf(key)
+    private val key = stringPreferencesKey(storageKeyName(keyName, "nullable_string"))
+    private val nullKey = booleanPreferencesKey(nullStorageKeyName(keyName, "nullable_string"))
+    private val legacyKey = stringPreferencesKey("${keyName}_nullable")
+    private val legacyDirectKey = stringPreferencesKey(keyName)
+    override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey, legacyDirectKey)
 
     override fun get(model: T): String? = getter(model)
     override fun set(model: T, value: String?): T = setter(model, value)
-
-    override fun hasValue(prefs: Preferences): Boolean = key in prefs
-    override fun isExplicitNull(prefs: Preferences): Boolean =
-        prefs[key] == NULL_SENTINEL
-    override fun clear(prefs: MutablePreferences) { prefs.remove(key) }
-
     override fun read(prefs: Preferences): String? {
-        val stored = prefs[key] ?: return null
-        // A genuine value equal to the sentinel reads back as null (documented).
-        return if (stored == NULL_SENTINEL) null else stored
+        if (nullKey in prefs) return null
+        if (key in prefs) return prefs.safeGet(key)
+        val legacy = prefs.safeGet(legacyKey)
+        if (legacy != null) {
+            return if (legacy == NULL_SENTINEL) null else legacy
+        }
+        return prefs.safeGet(legacyDirectKey)
     }
-
     override fun write(prefs: MutablePreferences, value: String?) {
-        prefs[key] = value ?: NULL_SENTINEL
+        prefs.removeAny(physicalKeys)
+        if (value == null) {
+            prefs[nullKey] = true
+            prefs[legacyKey] = NULL_SENTINEL
+            prefs.remove(legacyDirectKey)
+        } else {
+            prefs[key] = value
+            prefs[legacyKey] = value
+            prefs[legacyDirectKey] = value
+        }
     }
-
-    override fun encodeValue(value: String?): String {
-        val v = value ?: NULL_SENTINEL
-        return "s:$v"
+    override fun hasValue(prefs: Preferences): Boolean = prefs.containsAny(physicalKeys)
+    override fun isExplicitNull(prefs: Preferences): Boolean =
+        nullKey in prefs || (key !in prefs && prefs.safeGet(legacyKey)?.let {
+            it == NULL_SENTINEL
+        } == true)
+    override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
+    override val supportsExplicitNull: Boolean
+        get() = true
+    override val isNullableString: Boolean
+        get() = true
+    override fun toUiDropdownIndex(model: T): Int? {
+        val value = getter(model) ?: return null
+        val options = dropdownOptions(meta)
+        return options.indexOf(value).takeIf { it >= 0 }
     }
-
+    override fun fromUiDropdownIndex(index: Int): String? =
+        if (index == -1) null else dropdownOptions(meta).getOrNull(index)
+    override fun getDropdownOptions(): List<String>? =
+        dropdownOptions(meta).takeIf { it.isNotEmpty() }
+    override val capabilities: Set<SettingFieldCapability>
+        get() = setOf(SettingFieldCapability.TEXT_INPUT, SettingFieldCapability.DROPDOWN)
+    override fun encodeValue(value: String?): String = when {
+        value == null -> FieldEncoding.encode(FieldEncoding.NULL, "")
+        value == NULL_SENTINEL || value == CURRENT_NULL_SENTINEL ->
+            FieldEncoding.encode(FieldEncoding.NULLABLE_STRING, value)
+        else -> FieldEncoding.encode(FieldEncoding.STRING, value)
+    }
     override fun decodeValue(encoded: String): String? {
-        val v = encoded.substringAfter(':')
-        return if (v == NULL_SENTINEL) null else v
+        val tagged = FieldEncoding.tagged(
+            encoded,
+            FieldEncoding.NULL,
+            FieldEncoding.NULLABLE_STRING,
+            FieldEncoding.STRING,
+        )
+        return when (tagged.tag) {
+            FieldEncoding.NULL -> {
+                if (tagged.payload.isEmpty()) null
+                else throw IllegalArgumentException("Invalid null payload: $encoded")
+            }
+            FieldEncoding.NULLABLE_STRING -> tagged.payload
+            FieldEncoding.STRING -> when (tagged.payload) {
+                NULL_SENTINEL -> null
+                else -> tagged.payload
+            }
+            else -> throw IllegalArgumentException("Invalid nullable String value: $encoded")
+        }
     }
 }

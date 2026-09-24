@@ -18,14 +18,16 @@ import okio.Path.Companion.toPath
     // macOS: ~/Library/Application Support/<appName>
     // Linux/BSD/Unix: XDG_DATA_HOME or ~/.local/share/<appName>
 */
-fun createSettingsDataStore(name: String): DataStore<Preferences> =
-    createDataStore(
+fun createSettingsDataStore(name: String): DataStore<Preferences> {
+    requireSafeDataStoreName(name)
+    return createDataStore(
         producePath = {
             val dir = getAppDataDir(name)
             dir.mkdirs()
             File(dir, "$name.preferences_pb").absolutePath
         }
     )
+}
 
 private fun getAppDataDir(appName: String): File {
     val os = System.getProperty("os.name").lowercase()
@@ -54,6 +56,9 @@ internal actual fun createPreferencesStorage(path: String): Storage<Preferences>
         serializer = PreferencesFileSerializer,
         produceFile = { path.toPath().toFile() }
     )
+
+internal actual fun canonicalDataStorePath(path: String): String? =
+    File(path).canonicalFile.path
 
 internal actual val dataStoreContext: CoroutineContext =
     CoroutineScope(Dispatchers.IO + SupervisorJob()).coroutineContext

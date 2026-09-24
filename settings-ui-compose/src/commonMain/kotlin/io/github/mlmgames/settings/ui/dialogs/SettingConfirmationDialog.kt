@@ -12,14 +12,18 @@ fun SettingConfirmationDialog(
     onDismiss: () -> Unit,
 ) {
     val provider = LocalStringResourceProvider.current
+    val title = runCatching { config.resolvedTitle(provider) }.getOrElse { config.title }
+    val message = runCatching { config.resolvedMessage(provider) }.getOrElse { config.message }
+    val confirmLabel = runCatching { config.resolvedConfirmText(provider) }.getOrElse { config.confirmText }
+    val cancelLabel = runCatching { config.resolvedCancelText(provider) }.getOrElse { config.cancelText }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(config.resolvedTitle(provider))
+            Text(title)
         },
         text = {
-            Text(config.resolvedMessage(provider))
+            Text(message)
         },
         confirmButton = {
             TextButton(
@@ -32,12 +36,12 @@ fun SettingConfirmationDialog(
                     ButtonDefaults.textButtonColors()
                 }
             ) {
-                Text(config.resolvedConfirmText(provider))
+                Text(confirmLabel)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(config.resolvedCancelText(provider))
+                Text(cancelLabel)
             }
         }
     )

@@ -1,5 +1,6 @@
 package io.github.mlmgames.settings.ui.dialogs
 
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 
@@ -11,26 +12,50 @@ fun TimePickerSettingDialog(
     onDismiss: () -> Unit,
     onTimeSelected: (Int) -> Unit,
 ) {
-    val clamped = currentMinutes.coerceIn(0, 1439)
+    TimePickerSettingDialog(
+        title = title,
+        currentMinutes = currentMinutes,
+        onDismiss = onDismiss,
+        onTimeSelected = onTimeSelected,
+        onClear = null,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TimePickerSettingDialog(
+    title: String,
+    currentMinutes: Int?,
+    onDismiss: () -> Unit,
+    onTimeSelected: (Int) -> Unit,
+    onClear: (() -> Unit)? = null,
+) {
+    val initialMinutes = (currentMinutes ?: 0).coerceIn(0, 1439)
     val state = rememberTimePickerState(
-        initialHour = clamped / 60,
-        initialMinute = clamped % 60,
+        initialHour = initialMinutes / 60,
+        initialMinute = initialMinutes % 60,
         is24Hour = true,
     )
-    // Reset the picker if a different field retargets the shared dialog state.
     LaunchedEffect(title, currentMinutes) {
-        state.hour = clamped / 60
-        state.minute = clamped % 60
+        state.hour = initialMinutes / 60
+        state.minute = initialMinutes % 60
     }
 
     TimePickerDialog(
         title = { Text(title) },
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = {
-                onTimeSelected(state.hour * 60 + state.minute)
-            }) {
-                Text("Apply")
+            Row {
+                if (onClear != null) {
+                    TextButton(onClick = onClear) {
+                        Text("Clear")
+                    }
+                }
+                TextButton(onClick = {
+                    onTimeSelected(state.hour * 60 + state.minute)
+                }) {
+                    Text("Apply")
+                }
             }
         },
         dismissButton = {

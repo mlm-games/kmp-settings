@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.mlmgames.settings.ui.formatSliderValue
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 @Composable
@@ -18,15 +19,51 @@ fun SliderSettingDialog(
     onDismiss: () -> Unit,
     onValueSelected: (Float) -> Unit,
 ) {
-    // Guard misconfigured meta at the UI boundary: KSP validates, but
-    // hand-built schemas can still pass min>=max or step<=0, which would
-    // crash Slider (valueRange) or explode steps (Inf.toInt()).
-    val safeMin = min
-    val safeMax = if (max > min) max else min + 1f
-    val safeStep = if (step.isFinite() && step > 0f) step else (safeMax - safeMin)
+    SliderSettingDialog(
+        title = title,
+        currentValue = currentValue,
+        min = min,
+        max = max,
+        step = step,
+        onDismiss = onDismiss,
+        onValueSelected = onValueSelected,
+        allowNull = false,
+        onClear = null,
+    )
+}
+
+@Composable
+fun SliderSettingDialog(
+    title: String,
+    currentValue: Float?,
+    min: Float,
+    max: Float,
+    step: Float,
+    onDismiss: () -> Unit,
+    onValueSelected: (Float) -> Unit,
+    allowNull: Boolean = false,
+    onClear: (() -> Unit)? = null,
+) {
+    var safeMin = if (min.isFinite()) min else 0f
+    var safeMax = if (max.isFinite()) max else Float.MAX_VALUE / 2f
+    if (safeMin > Float.MAX_VALUE / 2f) safeMin = Float.MAX_VALUE / 2f
+    if (safeMax >= Float.MAX_VALUE) safeMax = Float.MAX_VALUE / 2f
+    if (!(safeMax > safeMin) || !(safeMax - safeMin).isFinite()) {
+        safeMin = 0f
+        safeMax = 1f
+    }
+    val safeRange = safeMax - safeMin
+    val requestedStep = if (step.isFinite() && step > 0f && step <= safeRange) step else safeRange
+    val intervalRatio = safeRange / requestedStep
+    val intervals = if (intervalRatio.isFinite()) {
+        ceil(intervalRatio).toInt().coerceIn(1, 10000)
+    } else {
+        1
+    }
+    val safeStep = (safeRange / intervals).takeIf { it.isFinite() && it > 0f } ?: safeRange
 
     var sliderValue by remember(currentValue, safeMin, safeMax, safeStep) {
-        mutableFloatStateOf(currentValue.coerceIn(safeMin, safeMax))
+        mutableFloatStateOf((currentValue ?: safeMin).coerceIn(safeMin, safeMax))
     }
 
     SettingsDialog(
@@ -43,28 +80,22 @@ fun SliderSettingDialog(
             }
         }
     ) {
-        val formatted = remember(sliderValue, safeStep) {
-            formatSliderValue(sliderValue, safeStep)
+        val formatted = remember(sliderValue, safeStep, currentValue) {
+            if (currentValue == null && sliderValue == safeMin) "(not set)" else formatSliderValue(sliderValue, safeStep)
         }
-
         Text(
             text = formatted,
             style = MaterialTheme.typography.headlineMedium
         )
         Spacer(Modifier.height(16.dp))
 
-        // steps = intervals - 1; snapping rounds to nearest (not truncation,
-        // which biased negative ranges toward zero).
-        val intervals = ((safeMax - safeMin) / safeStep).roundToInt().coerceAtLeast(1)
         val stepsCount = (intervals - 1).coerceAtLeast(0)
 
         Slider(
             value = sliderValue,
-            onValueChange = { v ->
-                val snapped = run {
-                    val n = ((v - safeMin) / safeStep).roundToInt()
-                    safeMin + (n * safeStep)
-                }
+            onValueChange = { value ->
+                val snapped = safeMin +
+                    ((value - safeMin) / safeStep).roundToInt() * safeStep
                 sliderValue = snapped.coerceIn(safeMin, safeMax)
             },
             valueRange = safeMin..safeMax,
@@ -85,6 +116,12 @@ fun SliderSettingDialog(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        if (allowNull && onClear != null) {
+            TextButton(onClick = onClear) {
+                Text("Clear")
+            }
         }
     }
 }

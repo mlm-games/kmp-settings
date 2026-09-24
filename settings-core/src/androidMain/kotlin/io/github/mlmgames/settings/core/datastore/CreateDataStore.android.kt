@@ -13,18 +13,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import java.io.File
 
-fun createSettingsDataStore(context: Context, name: String): DataStore<Preferences> =
-    createDataStore(
+fun createSettingsDataStore(context: Context, name: String): DataStore<Preferences> {
+    requireSafeDataStoreName(name)
+    return createDataStore(
         producePath = {
             context.preferencesDataStoreFile(name).absolutePath
         }
     )
+}
 
 internal actual fun createPreferencesStorage(path: String): Storage<Preferences> =
     FileStorage(
         serializer = PreferencesFileSerializer,
         produceFile = { File(path) }
     )
+
+internal actual fun canonicalDataStorePath(path: String): String? =
+    File(path).canonicalFile.path
 
 internal actual val dataStoreContext: CoroutineContext =
     CoroutineScope(Dispatchers.IO + SupervisorJob()).coroutineContext

@@ -1,0 +1,12 @@
+{
+  "formatVersion": 1,
+  "schemaVersion": 1,
+  "appId": "io.github.mlmgames.settings.integration",
+  "exportedAt": 0,
+  "deviceInfo": null,
+  "settings": {
+    "enabled": "b:true",
+    "future_setting": "s:future"
+  },
+  "checksum": "32353059"
+}

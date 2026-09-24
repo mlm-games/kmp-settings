@@ -1,5 +1,7 @@
 @file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
@@ -23,7 +25,12 @@ kotlin {
         }
     }
 
-    jvm()
+    jvm {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+    jvmToolchain(17)
     iosArm64()
     iosSimulatorArm64()
     linuxX64()
@@ -34,9 +41,9 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                implementation(libs.datastore.preferences.core)
-                implementation(libs.kotlinx.coroutines.core)
-                implementation(libs.kotlinx.serialization.json)
+                api(libs.datastore.preferences.core)
+                api(libs.kotlinx.coroutines.core)
+                api(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
                 implementation(libs.okio)
             }

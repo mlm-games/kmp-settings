@@ -16,15 +16,53 @@ fun DropdownSettingDialog(
     onDismiss: () -> Unit,
     onOptionSelected: (Int) -> Unit,
 ) {
-    // Keyed to props so a re-targeted dialog (shared currentField) never shows
-    // the previous field's selection.
-    var selected by remember(title, options, selectedIndex) { mutableStateOf(selectedIndex) }
+    DropdownSettingDialog(
+        title = title,
+        options = options,
+        selectedIndex = selectedIndex,
+        onDismiss = onDismiss,
+        onOptionSelected = onOptionSelected,
+        allowNull = false,
+    )
+}
+
+@Composable
+fun DropdownSettingDialog(
+    title: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onDismiss: () -> Unit,
+    onOptionSelected: (Int) -> Unit,
+    allowNull: Boolean = false,
+    nullLabel: String = "(not set)",
+) {
+    val displayedOptions = if (allowNull) listOf(nullLabel) + options else options
+    val initialIndex = when {
+        allowNull && selectedIndex < 0 -> 0
+        allowNull -> selectedIndex + 1
+        else -> selectedIndex
+    }.takeIf { it in displayedOptions.indices } ?: -1
+    var selected by remember(title, displayedOptions, initialIndex) {
+        mutableStateOf(initialIndex)
+    }
 
     SettingsDialog(
         onDismissRequest = onDismiss,
         title = title,
         confirmButton = {
-            TextButton(onClick = { onOptionSelected(selected) }) {
+            TextButton(
+                onClick = {
+                    val index = when {
+                        allowNull && selected == 0 -> -1
+                        allowNull -> selected - 1
+                        else -> selected
+                    }
+                    if (allowNull || index in options.indices) {
+                        onOptionSelected(index)
+                    }
+                },
+                enabled = allowNull || selected in options.indices,
+            ) {
                 Text("Select")
             }
         },
@@ -34,19 +72,19 @@ fun DropdownSettingDialog(
             }
         },
     ) {
-        options.forEachIndexed { index, option ->
+        displayedOptions.forEachIndexed { index, option ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .selectable(
-                        selected = (selected == index),
+                        selected = selected == index,
                         onClick = { selected = index }
                     )
                     .padding(vertical = 12.dp, horizontal = 16.dp)
             ) {
                 RadioButton(
-                    selected = (selected == index),
+                    selected = selected == index,
                     onClick = { selected = index }
                 )
                 Spacer(Modifier.width(12.dp))

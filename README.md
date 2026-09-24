@@ -11,7 +11,7 @@ Type-safe settings management for Kotlin Multiplatform with declarative UI gener
 - **Auto-generated schema**: KSP processor generates type-safe `SettingsSchema` with field metadata
 - **Built-in persistence**: DataStore-based storage with support for primitives, collections, enums, and serialized objects
 - **Auto-generated UI**: `AutoSettingsScreen` composable renders settings from schema with zero boilerplate
-- **Cross-platform**: Android, iOS, JVM (Desktop), and Linux support with platform-specific visibility controls
+- **Cross-platform**: Core supports Android, iOS, JVM (Desktop), Linux, and Wasm; the Compose UI currently targets Android, iOS, JVM, and Wasm
 - **Backup/restore**: JSON export/import with checksum validation and schema versioning
 - **Advanced features**: Field dependencies, validation rules, confirmation dialogs, undo/redo, reset management
 
@@ -31,17 +31,30 @@ dependencies {
 }
 ```
 
+For a Kotlin Multiplatform module, apply the KSP plugin and add the processor
+to `kspCommonMainMetadata` so the shared schema is generated once.
+
 **Requirements:**
 - Android minSdk 21
-- Java 17+ for KSP processor
+- Java 17 or newer for JVM builds, the KSP processor, and Gradle
 
 ## Quick Start
 
 ### 1. Define your settings
 
 ```kotlin
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import io.github.mlmgames.settings.core.SettingsRepository
 import io.github.mlmgames.settings.core.annotations.*
 import io.github.mlmgames.settings.core.types.*
+import io.github.mlmgames.settings.ui.AutoSettingsScreen
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 
 // Define categories
 @CategoryDefinition(order = 0)
@@ -91,15 +104,12 @@ The KSP processor generates `AppSettingsSchema` automatically.
 ### 3. Create repository and UI
 
 ```kotlin
-class SettingsViewModel : ViewModel() {
-    private val dataStore = createDataStore(
-        path = "settings.json",
-        corruptionHandler = null
-    )
-    
+class SettingsViewModel(
+    dataStore: DataStore<Preferences>,
+) : ViewModel() {
     private val repository = SettingsRepository(
         dataStore = dataStore,
-        schema = AppSettingsSchema // Generated class
+        schema = AppSettingsSchema,
     )
     
     val settings = repository.flow.stateIn(
@@ -108,7 +118,7 @@ class SettingsViewModel : ViewModel() {
         initialValue = AppSettingsSchema.default
     )
     
-    fun updateSetting(name: String, value: Any) {
+    fun updateSetting(name: String, value: Any?) {
         viewModelScope.launch {
             repository.set(name, value)
         }
@@ -126,6 +136,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     )
 }
 ```
+
+Create the `DataStore` in platform code and pass it into shared code. Android uses
+`createSettingsDataStore(context, "settings")`; JVM, iOS, Linux, and Wasm use
+`createSettingsDataStore("settings")`. The library keeps one active store per
+canonical file and rejects path-like store names.
 
 ## Usage
 
@@ -228,6 +243,10 @@ when (val result = backupManager.import(jsonString)) {
 }
 ```
 
+The importer accepts legacy `0.8.1` backup checksums and nullable storage markers.
+New exports use a versioned, unambiguous format. Legacy PIN hashes and timeout
+values are also migrated when they are successfully verified.
+
 ### Custom UI Types
 
 ```kotlin
@@ -261,7 +280,11 @@ cd kmp-settings
 ./gradlew build
 ```
 
-The project uses Gradle with Kotlin DSL. Tests might be added later as `*Test.kt` files alongside source.
+The JVM integration fixture in `integration-tests` compiles generated schemas
+and runs behavioral tests on Java 17. The root `build` task runs it automatically
+after publishing the local project artifacts; it can also be run directly with
+`./gradlew integrationTest`. Platform-specific suites are exposed as normal
+Gradle test tasks.
 
 To publish locally for testing:
 ```bash

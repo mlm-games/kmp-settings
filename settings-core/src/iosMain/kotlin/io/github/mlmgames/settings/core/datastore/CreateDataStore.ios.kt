@@ -19,8 +19,9 @@ import platform.Foundation.NSUserDomainMask
 import kotlin.coroutines.CoroutineContext
 
 @OptIn(ExperimentalForeignApi::class)
-fun createSettingsDataStore(name: String): DataStore<Preferences> =
-  createDataStore(
+fun createSettingsDataStore(name: String): DataStore<Preferences> {
+  requireSafeDataStoreName(name)
+  return createDataStore(
     producePath = {
       val dir: NSURL? = NSFileManager.defaultManager.URLForDirectory(
         directory = NSDocumentDirectory,
@@ -32,6 +33,7 @@ fun createSettingsDataStore(name: String): DataStore<Preferences> =
       requireNotNull(dir).path + "/$name.preferences_pb"
     }
   )
+}
 
 internal actual fun createPreferencesStorage(path: String): Storage<Preferences> =
     OkioStorage(
@@ -39,6 +41,9 @@ internal actual fun createPreferencesStorage(path: String): Storage<Preferences>
         serializer = PreferencesSerializer,
         producePath = { path.toPath() }
     )
+
+internal actual fun canonicalDataStorePath(path: String): String? =
+    path.toPath(normalize = true).toString()
 
 internal actual val dataStoreContext: CoroutineContext =
     CoroutineScope(Dispatchers.IO + SupervisorJob()).coroutineContext

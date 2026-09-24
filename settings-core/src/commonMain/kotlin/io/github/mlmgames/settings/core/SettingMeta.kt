@@ -2,10 +2,12 @@ package io.github.mlmgames.settings.core
 
 import io.github.mlmgames.settings.core.annotations.SettingAction
 import io.github.mlmgames.settings.core.annotations.SettingPlatform
+import io.github.mlmgames.settings.core.annotations.SettingValidator
 import io.github.mlmgames.settings.core.annotations.ValidationResult
 import io.github.mlmgames.settings.core.resources.StringResourceProvider
 import io.github.mlmgames.settings.core.types.SettingTypes
 import kotlin.reflect.KClass
+import kotlinx.coroutines.CancellationException
 
 /**
  * Kind of backing value for UI types.
@@ -165,6 +167,24 @@ data class SettingMeta(
             }
         }
 
+        for (validator in rules.customValidators) {
+            @Suppress("UNCHECKED_CAST")
+            val result = try {
+                (validator as SettingValidator<Any?>).validate(value)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                ValidationResult.Invalid("Validation failed: ${error.message ?: "unknown error"}")
+            }
+            if (result is ValidationResult.Invalid) {
+                return if (result.messageRes != 0) {
+                    ValidationResult.Invalid(provider.getString(result.messageRes), result.messageRes)
+                } else {
+                    result
+                }
+            }
+        }
+
         return ValidationResult.Valid
     }
 
@@ -180,7 +200,25 @@ data class ValidationRules(
     val required: Boolean = false,
     val errorMessage: String = "",
     val errorMessageRes: Int = 0,
-)
+    val customValidators: List<SettingValidator<*>> = emptyList(),
+) {
+    constructor(
+        range: ClosedFloatingPointRange<Double>?,
+        length: IntRange?,
+        pattern: Regex?,
+        required: Boolean,
+        errorMessage: String,
+        errorMessageRes: Int,
+    ) : this(
+        range = range,
+        length = length,
+        pattern = pattern,
+        required = required,
+        errorMessage = errorMessage,
+        errorMessageRes = errorMessageRes,
+        customValidators = emptyList(),
+    )
+}
 
 data class ConfirmationConfig(
     val title: String,

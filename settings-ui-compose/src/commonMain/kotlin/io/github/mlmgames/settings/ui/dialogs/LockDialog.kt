@@ -10,10 +10,31 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.mlmgames.settings.core.managers.SettingsLockManager
 import io.github.mlmgames.settings.core.managers.UnlockResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsLockDialog(
+    lockManager: SettingsLockManager,
+    isSettingPin: Boolean,
+    onSuccess: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val currentOnSuccess by rememberUpdatedState(onSuccess)
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
+
+    key(lockManager, isSettingPin) {
+        SettingsLockDialogContent(
+            lockManager = lockManager,
+            isSettingPin = isSettingPin,
+            onSuccess = { currentOnSuccess() },
+            onDismiss = { currentOnDismiss() },
+        )
+    }
+}
+
+@Composable
+private fun SettingsLockDialogContent(
     lockManager: SettingsLockManager,
     isSettingPin: Boolean,
     onSuccess: () -> Unit,
@@ -26,8 +47,6 @@ fun SettingsLockDialog(
     val scope = rememberCoroutineScope()
 
     AlertDialog(
-        // Dismiss is disabled while a PIN operation is in flight so the
-        // completion callback cannot fire after the caller has gone away.
         onDismissRequest = { if (!isProcessing) onDismiss() },
         title = { Text(if (isSettingPin) "Set PIN" else "Enter PIN") },
         text = {
@@ -35,20 +54,19 @@ fun SettingsLockDialog(
                 OutlinedTextField(
                     value = pin,
                     onValueChange = {
-                        // Digits only: the keyboard is a hint, paste can inject
-                        // anything. Non-digits are dropped, length capped at 6.
-                        val digits = it.filter { c -> c.isDigit() }.take(6)
-                        if (digits != pin) {
-                            pin = digits
-                            error = null
+                        if (!isProcessing) {
+                            val digits = it.filter(Char::isDigit).take(6)
+                            if (digits != pin) {
+                                pin = digits
+                                error = null
+                            }
                         }
                     },
                     label = { Text("PIN") },
                     visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.NumberPassword
-                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     isError = error != null,
+                    enabled = !isProcessing,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -58,18 +76,19 @@ fun SettingsLockDialog(
                     OutlinedTextField(
                         value = confirmPin,
                         onValueChange = {
-                            val digits = it.filter { c -> c.isDigit() }.take(6)
-                            if (digits != confirmPin) {
-                                confirmPin = digits
-                                error = null
+                            if (!isProcessing) {
+                                val digits = it.filter(Char::isDigit).take(6)
+                                if (digits != confirmPin) {
+                                    confirmPin = digits
+                                    error = null
+                                }
                             }
                         },
                         label = { Text("Confirm PIN") },
                         visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.NumberPassword
-                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         isError = error != null,
+                        enabled = !isProcessing,
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -78,7 +97,7 @@ fun SettingsLockDialog(
                 error?.let {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        it,
+                        text = it,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -88,27 +107,51 @@ fun SettingsLockDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    if (isProcessing) return@TextButton
+                    val validationError = when {
+                        pin.length !in 4..6 -> "PIN must be 4 to 6 digits"
+                        isSettingPin && pin != confirmPin -> "PINs don't match"
+                        else -> null
+                    }
+                    if (validationError != null) {
+                        error = validationError
+                        return@TextButton
+                    }
+
+                    isProcessing = true
+                    error = null
                     scope.launch {
-                        isProcessing = true
-                        if (isSettingPin) {
-                            when {
-                                pin.length < 4 -> error = "PIN must be at least 4 digits"
-                                pin != confirmPin -> error = "PINs don't match"
-                                else -> {
-                                    if (lockManager.enableLock(pin)) {
-                                        onSuccess()
-                                    } else {
-                                        error = "Failed to set PIN"
-                                    }
+                        var succeeded = false
+                        try {
+                            if (isSettingPin) {
+                                if (lockManager.enableLock(pin)) {
+                                    succeeded = true
+                                } else {
+                                    error = "Failed to set PIN"
+                                }
+                            } else {
+                                when (lockManager.unlock(pin)) {
+                                    UnlockResult.Success -> succeeded = true
+                                    UnlockResult.InvalidPin -> error = "Invalid PIN"
                                 }
                             }
-                        } else {
-                            when (lockManager.unlock(pin)) {
-                                UnlockResult.Success -> onSuccess()
-                                UnlockResult.InvalidPin -> error = "Invalid PIN"
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            error = failure.message ?: "PIN operation failed"
+                        } finally {
+                            isProcessing = false
+                        }
+
+                        if (succeeded) {
+                            try {
+                                onSuccess()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                error = failure.message ?: "PIN operation failed"
                             }
                         }
-                        isProcessing = false
                     }
                 },
                 enabled = !isProcessing && pin.isNotEmpty() && (!isSettingPin || confirmPin.isNotEmpty())
@@ -117,7 +160,10 @@ fun SettingsLockDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = { if (!isProcessing) onDismiss() },
+                enabled = !isProcessing
+            ) {
                 Text("Cancel")
             }
         }

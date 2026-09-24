@@ -12,12 +12,12 @@ import kotlin.coroutines.CoroutineContext
 
 private val wasmStores = mutableMapOf<String, DataStore<Preferences>>()
 
-fun createSettingsDataStore(name: String): DataStore<Preferences> =
-    wasmStores.getOrPut(name) {
-        createDataStore(
-            producePath = { name }
-        )
+fun createSettingsDataStore(name: String): DataStore<Preferences> {
+    requireSafeDataStoreName(name)
+    return wasmStores.getOrPut(name) {
+        createUncachedDataStore(name)
     }
+}
 
 internal actual fun createPreferencesStorage(path: String): Storage<Preferences> =
     WebLocalStorage(
@@ -28,8 +28,10 @@ internal actual fun createPreferencesStorage(path: String): Storage<Preferences>
 internal actual val dataStoreContext: CoroutineContext =
     CoroutineScope(Dispatchers.Default + SupervisorJob()).coroutineContext
 
-private fun createDataStore(producePath: () -> String): DataStore<Preferences> {
-    val storage = createPreferencesStorage(producePath())
+internal actual fun canonicalDataStorePath(path: String): String? = null
+
+private fun createUncachedDataStore(path: String): DataStore<Preferences> {
+    val storage = createPreferencesStorage(path)
     return DataStore.Builder(
         storage = storage,
         context = dataStoreContext

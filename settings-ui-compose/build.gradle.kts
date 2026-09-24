@@ -1,5 +1,7 @@
 @file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
@@ -16,7 +18,12 @@ kotlin {
         minSdk = 21
     }
 
-    jvm()
+    jvm {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+    jvmToolchain(17)
     iosArm64()
     iosSimulatorArm64()
     wasmJs {
@@ -26,12 +33,17 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                implementation(project(":settings-core"))
-                implementation(libs.compose.runtime)
-                implementation(libs.compose.foundation)
-                implementation(libs.compose.material3)
-                implementation(libs.compose.ui)
+                api(project(":settings-core"))
+                api(libs.compose.runtime)
+                api(libs.compose.foundation)
+                api(libs.compose.material3)
+                api(libs.compose.ui)
                 implementation(libs.kotlinx.coroutines.core)
+            }
+        }
+        jvmTest {
+            dependencies {
+                implementation(kotlin("test"))
             }
         }
     }

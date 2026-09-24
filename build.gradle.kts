@@ -14,3 +14,22 @@ dependencies {
     dokka(project(":settings-core"))
     dokka(project(":settings-ui-compose"))
 }
+
+val integrationTest = tasks.register<Exec>("integrationTest") {
+    dependsOn(
+        ":settings-core:publishToMavenLocal",
+        ":settings-ui-compose:publishToMavenLocal",
+        ":settings-ksp:publishToMavenLocal",
+    )
+    workingDir(layout.projectDirectory.dir("integration-tests"))
+    commandLine(
+        rootProject.layout.projectDirectory.file("gradlew").asFile.absolutePath,
+        "-PVERSION_NAME=${project.property("VERSION_NAME")}",
+        "build",
+        "--no-daemon",
+    )
+}
+
+tasks.named("build") {
+    dependsOn(integrationTest)
+}
