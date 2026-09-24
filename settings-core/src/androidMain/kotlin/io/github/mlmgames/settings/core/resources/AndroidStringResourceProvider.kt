@@ -24,7 +24,8 @@ class AndroidStringResourceProvider(
 
     override fun getStringArray(key: String): List<String> = getStringArray(resolveKey(key))
 
-    private fun resolveKey(key: String): Int = keyResolver?.invoke(key) ?: resolveBuiltinKey(key)
+    private fun resolveKey(key: String): Int = keyResolver?.invoke(key)?.takeIf { it != 0 }
+        ?: resolveBuiltinKey(key)
 
     companion object {
         private fun resolveBuiltinKey(key: String): Int = when (key) {

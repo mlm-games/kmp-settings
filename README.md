@@ -177,8 +177,10 @@ ProvideStringResources(
 ```
 
 `SettingsTextKeys` contains the built-in UI keys used by the generated settings
-screen and dialogs. The KSP processor warns when UI metadata relies only on
-literal text.
+screen and dialogs. The Android artifact ships localized resources for these
+keys, an application resolver only needs to provide application-specific keys.
+Returning `0` for an unknown key lets the provider fall back to the library
+resource. The KSP processor warns when UI metadata relies only on literal text.
 
 ## Usage
 
