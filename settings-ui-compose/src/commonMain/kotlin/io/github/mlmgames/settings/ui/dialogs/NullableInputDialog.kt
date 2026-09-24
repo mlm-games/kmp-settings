@@ -5,6 +5,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
+import io.github.mlmgames.settings.ui.LocalStringResourceProvider
+import io.github.mlmgames.settings.ui.components.resolveSettingsText
 
 @Composable
 fun NullableInputDialog(
@@ -16,6 +19,7 @@ fun NullableInputDialog(
     onClear: () -> Unit,
     validator: (String?) -> Boolean = { true },
 ) {
+    val provider = LocalStringResourceProvider.current
     var input by remember(title, value) { mutableStateOf(value) }
     val valid = validator(input)
 
@@ -27,12 +31,22 @@ fun NullableInputDialog(
                 onClick = { onConfirm(input) },
                 enabled = valid,
             ) {
-                Text("Apply")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.APPLY,
+                        "Apply",
+                    )
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.CANCEL,
+                        "Cancel",
+                    )
+                )
             }
         }
     ) {
@@ -45,7 +59,12 @@ fun NullableInputDialog(
         )
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onClear) {
-            Text("Clear")
+            Text(
+                provider.resolveSettingsText(
+                    SettingsTextKeys.CLEAR,
+                    "Clear",
+                )
+            )
         }
     }
 }

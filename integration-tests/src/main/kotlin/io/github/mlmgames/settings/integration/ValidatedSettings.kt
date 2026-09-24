@@ -9,7 +9,14 @@ import kotlinx.serialization.Serializable
 
 class PositiveBooleanValidator : SettingValidator<Boolean> {
     override fun validate(value: Boolean): ValidationResult =
-        if (value) ValidationResult.Valid else ValidationResult.Invalid("Must be enabled")
+        if (value) {
+            ValidationResult.Valid
+        } else {
+            ValidationResult.Invalid(
+                message = "Must be enabled",
+                messageKey = "settings.validation.enabled",
+            )
+        }
 }
 
 class NullableBooleanValidator : SettingValidator<Boolean?> {

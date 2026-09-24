@@ -2,6 +2,9 @@ package io.github.mlmgames.settings.ui.dialogs
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
+import io.github.mlmgames.settings.ui.LocalStringResourceProvider
+import io.github.mlmgames.settings.ui.components.resolveSettingsText
 
 @Composable
 fun InputDialog(
@@ -15,6 +18,17 @@ fun InputDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val provider = LocalStringResourceProvider.current
+    val resolvedConfirmText = when (confirmText) {
+        "Confirm" -> provider.resolveSettingsText(SettingsTextKeys.CONFIRM, confirmText)
+        "OK" -> provider.resolveSettingsText(SettingsTextKeys.OK, confirmText)
+        else -> confirmText
+    }
+    val resolvedDismissText = if (dismissText == "Cancel") {
+        provider.resolveSettingsText(SettingsTextKeys.CANCEL, dismissText)
+    } else {
+        dismissText
+    }
     var input by remember(title, value) { mutableStateOf(value) }
     val valid = validator(input)
 
@@ -26,12 +40,12 @@ fun InputDialog(
                 onClick = { onConfirm(input) },
                 enabled = valid,
             ) {
-                Text(confirmText)
+                Text(resolvedConfirmText)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(dismissText)
+                Text(resolvedDismissText)
             }
         }
     ) {

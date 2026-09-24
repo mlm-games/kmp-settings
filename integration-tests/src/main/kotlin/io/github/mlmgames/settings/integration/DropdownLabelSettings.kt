@@ -8,9 +8,11 @@ import kotlinx.serialization.Serializable
 data class DropdownLabelSettings(
     @Setting(
         title = "Language",
+        titleKey = "settings.language.title",
         category = General::class,
         type = Dropdown::class,
         options = ["English", "Spanish", "French"],
+        optionsKey = "settings.language.options",
     )
     val language: Int = 0,
 )

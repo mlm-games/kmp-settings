@@ -7,6 +7,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
+import io.github.mlmgames.settings.ui.LocalStringResourceProvider
+import io.github.mlmgames.settings.ui.components.resolveSettingsText
 
 @Composable
 fun DropdownSettingDialog(
@@ -36,7 +39,13 @@ fun DropdownSettingDialog(
     allowNull: Boolean = false,
     nullLabel: String = "(not set)",
 ) {
-    val displayedOptions = if (allowNull) listOf(nullLabel) + options else options
+    val provider = LocalStringResourceProvider.current
+    val resolvedNullLabel = if (nullLabel == "(not set)") {
+        provider.resolveSettingsText(SettingsTextKeys.NOT_SET, nullLabel)
+    } else {
+        nullLabel
+    }
+    val displayedOptions = if (allowNull) listOf(resolvedNullLabel) + options else options
     val initialIndex = when {
         allowNull && selectedIndex < 0 -> 0
         allowNull -> selectedIndex + 1
@@ -63,12 +72,22 @@ fun DropdownSettingDialog(
                 },
                 enabled = allowNull || selected in options.indices,
             ) {
-                Text("Select")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.SELECT,
+                        "Select",
+                    )
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.CANCEL,
+                        "Cancel",
+                    )
+                )
             }
         },
     ) {

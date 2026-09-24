@@ -15,6 +15,9 @@ import io.github.mlmgames.settings.core.SettingsSchema
 import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.managers.ResetManager
 import io.github.mlmgames.settings.core.platform.currentPlatform
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
+import io.github.mlmgames.settings.ui.LocalStringResourceProvider
+import io.github.mlmgames.settings.ui.components.resolveSettingsText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.reflect.KClass
@@ -34,6 +37,7 @@ fun <T> ResetSettingsDialog(
     onDismiss: () -> Unit,
     onReset: () -> Unit,
 ) {
+    val provider = LocalStringResourceProvider.current
     var selectedOption by remember { mutableStateOf(ResetOption.UI_ONLY) }
     var selectedCategory by remember { mutableStateOf<KClass<*>?>(null) }
     var pendingReset by remember { mutableStateOf<ResetRequest<T>?>(null) }
@@ -98,7 +102,10 @@ fun <T> ResetSettingsDialog(
             isResetting = false
             if (failure != null) {
                 resultIsError = true
-                resultMessage = failure.message ?: "Reset failed"
+                resultMessage = failure.message ?: provider.resolveSettingsText(
+                    SettingsTextKeys.RESET_FAILED,
+                    "Reset failed",
+                )
                 return@launch
             }
 
@@ -106,12 +113,24 @@ fun <T> ResetSettingsDialog(
             resultIsError = partial
             resultMessage = if (partial) {
                 if (count < request.fields.size) {
-                    "Reset partially completed: $count of ${request.fields.size} settings"
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.RESET_PARTIAL,
+                        "Reset partially completed: $count of ${request.fields.size} settings",
+                        count,
+                        request.fields.size,
+                    )
                 } else {
-                    "Reset completed with an unexpected result: $count settings"
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.RESET_UNEXPECTED,
+                        "Reset completed with an unexpected result: $count settings",
+                        count,
+                    )
                 }
             } else {
-                "Reset complete"
+                provider.resolveSettingsText(
+                    SettingsTextKeys.RESET_COMPLETE,
+                    "Reset complete",
+                )
             }
 
             try {
@@ -120,7 +139,10 @@ fun <T> ResetSettingsDialog(
                 throw cancelled
             } catch (error: Exception) {
                 resultIsError = true
-                resultMessage = error.message ?: "Reset callback failed"
+                resultMessage = error.message ?: provider.resolveSettingsText(
+                    SettingsTextKeys.RESET_CALLBACK_FAILED,
+                    "Reset callback failed",
+                )
                 return@launch
             }
 
@@ -133,12 +155,21 @@ fun <T> ResetSettingsDialog(
         val request = ResetRequest(selectedOption, fieldsForSelectedOption)
         if (request.fields.isEmpty()) {
             resultIsError = true
-            resultMessage = "There are no resettable settings in this selection"
+            resultMessage = provider.resolveSettingsText(
+                SettingsTextKeys.NO_RESETTABLE_SETTINGS,
+                "There are no resettable settings in this selection",
+            )
             return@requestReset
         }
         val messages = request.fields.mapNotNull { field ->
-            field.resetConfirmation?.takeIf { it.isNotBlank() }?.let { message ->
-                val name = field.meta?.title?.ifBlank { field.name } ?: field.name
+            val confirmation = field.resetConfirmationKey?.let { key ->
+                provider.resolveSettingsText(key, field.resetConfirmation.orEmpty())
+            } ?: field.resetConfirmation
+            confirmation?.takeIf { it.isNotBlank() }?.let { message ->
+                val name = runCatching { field.meta?.resolvedTitle(provider) }
+                    .getOrNull()
+                    ?.ifBlank { field.name }
+                    ?: field.name
                 "$name: $message"
             }
         }
@@ -153,13 +184,53 @@ fun <T> ResetSettingsDialog(
         onDismissRequest = {
             if (!isResetting && pendingReset == null) currentOnDismiss()
         },
-        title = { Text("Reset Settings") },
+        title = {
+            Text(
+                provider.resolveSettingsText(
+                    SettingsTextKeys.RESET_SETTINGS,
+                    "Reset Settings",
+                )
+            )
+        },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text("Choose what to reset:")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.CHOOSE_RESET,
+                        "Choose what to reset:",
+                    )
+                )
                 Spacer(Modifier.height(12.dp))
 
                 ResetOption.entries.forEach { option ->
+                    val optionTitle = when (option) {
+                        ResetOption.UI_ONLY -> provider.resolveSettingsText(
+                            SettingsTextKeys.UI_ONLY,
+                            option.title,
+                        )
+                        ResetOption.CATEGORY -> provider.resolveSettingsText(
+                            SettingsTextKeys.CATEGORY_ONLY,
+                            option.title,
+                        )
+                        ResetOption.ALL -> provider.resolveSettingsText(
+                            SettingsTextKeys.ALL_SETTINGS,
+                            option.title,
+                        )
+                    }
+                    val optionDescription = when (option) {
+                        ResetOption.UI_ONLY -> provider.resolveSettingsText(
+                            SettingsTextKeys.UI_ONLY_DESCRIPTION,
+                            option.description,
+                        )
+                        ResetOption.CATEGORY -> provider.resolveSettingsText(
+                            SettingsTextKeys.CATEGORY_ONLY_DESCRIPTION,
+                            option.description,
+                        )
+                        ResetOption.ALL -> provider.resolveSettingsText(
+                            SettingsTextKeys.ALL_SETTINGS_DESCRIPTION,
+                            option.description,
+                        )
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -189,9 +260,9 @@ fun <T> ResetSettingsDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                         Column {
-                            Text(option.title)
+                            Text(optionTitle)
                             Text(
-                                option.description,
+                                optionDescription,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -201,7 +272,13 @@ fun <T> ResetSettingsDialog(
 
                 if (selectedOption == ResetOption.CATEGORY && categories.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
-                    Text("Select category:", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        provider.resolveSettingsText(
+                            SettingsTextKeys.SELECT_CATEGORY,
+                            "Select category:",
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                     Spacer(Modifier.height(8.dp))
                     Column(
                         modifier = Modifier
@@ -210,8 +287,14 @@ fun <T> ResetSettingsDialog(
                     ) {
                         categories.forEach { category ->
                             val categoryTitle = categoryTitles[category]
+                                ?: schema.categoryTitleKeys[category]?.let { key ->
+                                    provider.resolveSettingsText(key, category.simpleName.orEmpty())
+                                }
                                 ?: category.simpleName
-                                ?: "Unknown"
+                                ?: provider.resolveSettingsText(
+                                    SettingsTextKeys.UNKNOWN,
+                                    "Unknown",
+                                )
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -258,7 +341,12 @@ fun <T> ResetSettingsDialog(
                     contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("Reset")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.RESET,
+                        "Reset",
+                    )
+                )
             }
         },
         dismissButton = {
@@ -266,16 +354,27 @@ fun <T> ResetSettingsDialog(
                 onClick = { if (!isResetting && pendingReset == null) currentOnDismiss() },
                 enabled = !isResetting && pendingReset == null
             ) {
-                Text("Cancel")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.CANCEL,
+                        "Cancel",
+                    )
+                )
             }
         }
     )
 
     pendingReset?.let { request ->
         val message = request.fields.mapNotNull { field ->
-            field.resetConfirmation?.takeIf { it.isNotBlank() }?.let { confirmation ->
-                val name = field.meta?.title?.ifBlank { field.name } ?: field.name
-                "$name: $confirmation"
+            val confirmation = field.resetConfirmationKey?.let { key ->
+                provider.resolveSettingsText(key, field.resetConfirmation.orEmpty())
+            } ?: field.resetConfirmation
+            confirmation?.takeIf { it.isNotBlank() }?.let { text ->
+                val name = runCatching { field.meta?.resolvedTitle(provider) }
+                    .getOrNull()
+                    ?.ifBlank { field.name }
+                    ?: field.name
+                "$name: $text"
             }
         }.joinToString("\n")
         SettingConfirmationDialog(
@@ -289,6 +388,9 @@ fun <T> ResetSettingsDialog(
                 cancelText = "Cancel",
                 cancelTextRes = 0,
                 isDangerous = true,
+                titleKey = SettingsTextKeys.CONFIRM_RESET,
+                confirmTextKey = SettingsTextKeys.RESET,
+                cancelTextKey = SettingsTextKeys.CANCEL,
             ),
             onConfirm = {
                 if (pendingReset == request && !isResetting) {

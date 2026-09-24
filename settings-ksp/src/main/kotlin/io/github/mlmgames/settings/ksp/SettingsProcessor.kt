@@ -205,16 +205,19 @@ class SettingsProcessor(
         val instance: CodeBlock,
     )
 
-    private data class ValidationMessage(val text: String, val resource: Int)
+    private data class ValidationMessage(val text: String, val resource: Int, val key: String)
 
     private data class SettingConfig(
         val title: String,
         val description: String,
         val titleRes: Int,
         val descriptionRes: Int,
+        val titleKey: String,
+        val descriptionKey: String,
         val categoryClass: ClassName,
         val categoryOrder: Int,
         val categoryTitleRes: Int,
+        val categoryTitleKey: String,
         val typeClass: ClassName,
         val uiKind: UiKind,
         val key: String,
@@ -224,6 +227,7 @@ class SettingsProcessor(
         val step: Float,
         val options: List<String>,
         val optionsRes: Int,
+        val optionsKey: String,
         val actionClass: ClassName?,
         val platforms: List<String>,
         val validationMessage: ValidationMessage?,
@@ -244,6 +248,7 @@ class SettingsProcessor(
         val metadata: Map<String, FieldMetadata>,
         val schemaVersion: Int,
         val categoryTitleResources: Map<ClassName, Int>,
+        val categoryTitleKeys: Map<ClassName, String>,
     )
 
     private class Diagnostics(private val logger: KSPLogger) {
@@ -253,6 +258,10 @@ class SettingsProcessor(
         fun error(message: String, symbol: KSNode? = null) {
             hasErrors = true
             if (symbol == null) logger.error(message) else logger.error(message, symbol)
+        }
+
+        fun warn(message: String, symbol: KSNode? = null) {
+            if (symbol == null) logger.warn(message) else logger.warn(message, symbol)
         }
     }
 
@@ -512,6 +521,9 @@ class SettingsProcessor(
             schemaVersion = schemaVersion,
             categoryTitleResources = settingConfigs.values
                 .associate { it.categoryClass to it.categoryTitleRes },
+            categoryTitleKeys = settingConfigs.values
+                .associate { it.categoryClass to it.categoryTitleKey }
+                .filterValues { it.isNotBlank() },
         )
     }
 
@@ -905,7 +917,9 @@ class SettingsProcessor(
             diagnostics.error("Category ${categoryDeclaration.simpleName.asString()} lacks @CategoryDefinition", property)
         }
         val categoryTitleRes = categoryAnnotation?.argument("titleRes")?.intValue() ?: 0
+        val categoryTitleKey = categoryAnnotation?.argument("titleKey")?.stringValue() ?: ""
         if (categoryTitleRes < 0) diagnostics.error("Category titleRes must not be negative ('$propertyName')", property)
+        validateStringKey(categoryTitleKey, "category titleKey", propertyName, property, diagnostics)
         val categoryOrder = categoryAnnotation?.argument("order")?.intValue() ?: 0
         val categoryClass = categoryType.toClassNameOrNull()
         if (categoryClass == null) {
@@ -920,7 +934,9 @@ class SettingsProcessor(
         val title = annotation.argument("title")?.stringValue() ?: ""
         val description = annotation.argument("description")?.stringValue() ?: ""
         val titleRes = annotation.argument("titleRes")?.intValue() ?: 0
+        val titleKey = annotation.argument("titleKey")?.stringValue() ?: ""
         val descriptionRes = annotation.argument("descriptionRes")?.intValue() ?: 0
+        val descriptionKey = annotation.argument("descriptionKey")?.stringValue() ?: ""
         val key = keyFor(property, AnnotationKind.SETTING)
         val dependsOn = annotation.argument("dependsOn")?.stringValue() ?: ""
         val min = annotation.argument("min")?.floatValue() ?: 0f
@@ -928,6 +944,10 @@ class SettingsProcessor(
         val step = annotation.argument("step")?.floatValue() ?: 1f
         val options = stringListArgument(annotation, "options", diagnostics, propertyName)
         val optionsRes = annotation.argument("optionsRes")?.intValue() ?: 0
+        val optionsKey = annotation.argument("optionsKey")?.stringValue() ?: ""
+        validateStringKey(titleKey, "titleKey", propertyName, property, diagnostics)
+        validateStringKey(descriptionKey, "descriptionKey", propertyName, property, diagnostics)
+        validateStringKey(optionsKey, "optionsKey", propertyName, property, diagnostics)
         if (titleRes < 0 || descriptionRes < 0 || optionsRes < 0) {
             diagnostics.error("Resource IDs must not be negative ('$propertyName')", property)
         }
@@ -939,9 +959,12 @@ class SettingsProcessor(
             description = description,
             titleRes = titleRes,
             descriptionRes = descriptionRes,
+            titleKey = titleKey,
+            descriptionKey = descriptionKey,
             categoryClass = categoryClass,
             categoryOrder = categoryOrder,
             categoryTitleRes = categoryTitleRes,
+            categoryTitleKey = categoryTitleKey,
             typeClass = typeClass,
             uiKind = uiKind,
             key = key,
@@ -951,6 +974,7 @@ class SettingsProcessor(
             step = step,
             options = options,
             optionsRes = optionsRes,
+            optionsKey = optionsKey,
             actionClass = actionClass,
             platforms = platforms,
             validationMessage = validationMessage,
@@ -977,13 +1001,22 @@ class SettingsProcessor(
             val annotation = property.getAnnotation(annotationName) ?: continue
             val message = annotation.argument("errorMessage")?.stringValue() ?: defaultValidationMessage(annotationName)
             val resource = annotation.argument("errorMessageRes")?.intValue() ?: 0
+            val explicitKey = annotation.argument("errorMessageKey")?.stringValue().orEmpty()
+            val key = if (explicitKey.isNotBlank()) {
+                explicitKey
+            } else if (resource == 0 && message == defaultValidationMessage(annotationName)) {
+                defaultValidationKey(annotationName)
+            } else {
+                ""
+            }
             if (resource < 0) diagnostics.error("Validation errorMessageRes must not be negative ('${property.simpleName.asString()}')", property)
-            messages += ValidationMessage(message, resource)
+            validateStringKey(key, "errorMessageKey", property.simpleName.asString(), property, diagnostics)
+            messages += ValidationMessage(message, resource, key)
         }
         val distinct = messages.distinct()
         if (distinct.size > 1) {
             diagnostics.error(
-                "ValidationRules exposes one errorMessage/errorMessageRes pair; use the same message for every rule on '${property.simpleName.asString()}'",
+                "ValidationRules exposes one errorMessage/errorMessageRes/errorMessageKey tuple; use the same message for every rule on '${property.simpleName.asString()}'",
                 property,
             )
         }
@@ -997,6 +1030,25 @@ class SettingsProcessor(
         else -> "This field is required"
     }
 
+    private fun defaultValidationKey(annotationName: String): String = when (annotationName) {
+        RANGE_ANNOTATION -> "settings_value_out_of_range"
+        LENGTH_ANNOTATION -> "settings_invalid_length"
+        PATTERN_ANNOTATION -> "settings_invalid_format"
+        else -> "settings_required"
+    }
+
+    private fun effectiveLocalizationKey(
+        key: String,
+        resId: Int,
+        text: String,
+        defaultText: String,
+        defaultKey: String,
+    ): String = when {
+        key.isNotBlank() -> key
+        resId == 0 && text == defaultText -> defaultKey
+        else -> ""
+    }
+
     private fun validateSetting(
         property: KSPropertyDeclaration,
         plan: FieldPlan,
@@ -1005,6 +1057,31 @@ class SettingsProcessor(
         diagnostics: Diagnostics,
     ) {
         val name = property.simpleName.asString()
+        if (config.titleKey.isBlank() && config.titleRes == 0) {
+            if (config.title.isBlank()) {
+                diagnostics.warn(
+                    "@Setting '$name' has no title metadata; provide title= or titleKey=",
+                    property,
+                )
+            } else {
+                diagnostics.warn(
+                    "@Setting '$name' uses a literal title; provide titleKey= or titleRes= for localization",
+                    property,
+                )
+            }
+        }
+        if (config.description.isNotBlank() && config.descriptionKey.isBlank() && config.descriptionRes == 0) {
+            diagnostics.warn(
+                "@Setting '$name' uses a literal description; provide descriptionKey= or descriptionRes= for localization",
+                property,
+            )
+        }
+        if (config.options.isNotEmpty() && config.optionsKey.isBlank() && config.optionsRes == 0) {
+            diagnostics.warn(
+                "@Setting '$name' uses literal dropdown options; provide optionsKey= or optionsRes= for localization",
+                property,
+            )
+        }
         if (!config.min.isFinite() || !config.max.isFinite() || !config.step.isFinite()) {
             diagnostics.error("@Setting min, max, and step must be finite ('$name')", property)
         }
@@ -1025,11 +1102,8 @@ class SettingsProcessor(
         if (config.uiKind == UiKind.DROPDOWN) {
             val baseName = plan.baseType.declaration.qualifiedName?.asString()
             if (baseName in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double", "kotlin.String")) {
-                if (config.options.isEmpty() && config.optionsRes == 0) {
-                    diagnostics.error("Dropdown '$name' needs options= or optionsRes=", property)
-                }
-                if (config.options.isEmpty() && config.optionsRes == 0) {
-                    diagnostics.error("Dropdown '$name' needs options= or optionsRes=", property)
+                if (config.options.isEmpty() && config.optionsRes == 0 && config.optionsKey.isBlank()) {
+                    diagnostics.error("Dropdown '$name' needs options=, optionsRes=, or optionsKey=", property)
                 }
             }
             if (isEnumType(plan.baseType)) {
@@ -1165,12 +1239,24 @@ class SettingsProcessor(
         if (property.hasAnnotation(NO_RESET_ANNOTATION) && property.hasAnnotation(CONFIRM_RESET_ANNOTATION)) {
             diagnostics.error("@NoReset and @ConfirmReset cannot be combined ('$name')", property)
         }
+        property.getAnnotation(CONFIRM_RESET_ANNOTATION)?.let { annotation ->
+            validateStringKey(
+                annotation.argument("messageKey")?.stringValue().orEmpty(),
+                "messageKey",
+                name,
+                property,
+                diagnostics,
+            )
+        }
         if (property.hasAnnotation(REQUIRES_CONFIRMATION_ANNOTATION)) {
             val annotation = property.getAnnotation(REQUIRES_CONFIRMATION_ANNOTATION)!!
             val resources = listOf("titleRes", "messageRes", "confirmTextRes", "cancelTextRes")
             for (resource in resources) {
                 val value = annotation.argument(resource)?.intValue() ?: 0
                 if (value < 0) diagnostics.error("Confirmation resource IDs must not be negative ('$name')", property)
+            }
+            for (key in listOf("titleKey", "messageKey", "confirmTextKey", "cancelTextKey")) {
+                validateStringKey(annotation.argument(key)?.stringValue().orEmpty(), key, name, property, diagnostics)
             }
         }
     }
@@ -1450,6 +1536,17 @@ class SettingsProcessor(
                 .initializer(buildCategoryTitleResources(analysis)).build(),
         )
 
+        objectBuilder.addProperty(
+            PropertySpec.builder(
+                "categoryTitleKeys",
+                ClassName("kotlin.collections", "Map").parameterizedBy(
+                    ClassName("kotlin.reflect", "KClass").parameterizedBy(com.squareup.kotlinpoet.STAR),
+                    ClassName("kotlin", "String"),
+                ),
+            ).addModifiers(KModifier.OVERRIDE)
+                .initializer(buildCategoryTitleKeys(analysis)).build(),
+        )
+
         val fileSpec = com.squareup.kotlinpoet.FileSpec.builder(packageName, schemaName)
             .addType(objectBuilder.build())
             .build()
@@ -1487,6 +1584,19 @@ class SettingsProcessor(
             code.add("deprecationMessage = %L,\n", metadata.deprecationMessage?.let { CodeBlock.of("%S", it) } ?: CodeBlock.of("null"))
             code.add("removeInVersion = %L,\n", metadata.removeInVersion?.toString() ?: "null")
             code.unindent().add(")")
+        }
+        code.unindent().add(")")
+        return code.build()
+    }
+
+    private fun buildCategoryTitleKeys(analysis: ClassAnalysis): CodeBlock {
+        val entries = analysis.categoryTitleKeys
+        if (entries.isEmpty()) return CodeBlock.of("emptyMap()")
+        val code = CodeBlock.builder().add("mapOf(\n").indent()
+        var index = 0
+        for ((className, key) in entries) {
+            if (index++ > 0) code.add(",\n")
+            code.add("%T::class to %S", className, key)
         }
         code.unindent().add(")")
         return code.build()
@@ -1655,6 +1765,8 @@ class SettingsProcessor(
         .add("description = %S,\n", config.description)
         .add("titleRes = %L,\n", config.titleRes)
         .add("descriptionRes = %L,\n", config.descriptionRes)
+        .add("titleKey = %S,\n", config.titleKey)
+        .add("descriptionKey = %S,\n", config.descriptionKey)
         .add("category = %T::class,\n", config.categoryClass)
         .add("categoryOrder = %L,\n", config.categoryOrder)
         .add("type = %T::class,\n", config.typeClass)
@@ -1674,6 +1786,8 @@ class SettingsProcessor(
         }
         .add("),\n")
         .add("optionsRes = %L,\n", config.optionsRes)
+        .add("optionsKey = %S,\n", config.optionsKey)
+        .add("confirmResetKey = %S,\n", confirmResetKey(plan.property))
         .add("actionClass = %L,\n", config.actionClass?.let { CodeBlock.of("%T::class", it) } ?: CodeBlock.of("null"))
         .add("validation = %L,\n", buildValidationBlock(plan.property, config.validationMessage, plan.validator))
         .add("confirmation = %L,\n", buildConfirmationBlock(plan.property))
@@ -1720,6 +1834,7 @@ class SettingsProcessor(
         code.add("required = %L,\n", hasRequired)
         code.add("errorMessage = %S,\n", message?.text ?: "Value out of range")
         code.add("errorMessageRes = %L,\n", message?.resource ?: 0)
+        code.add("errorMessageKey = %S,\n", message?.key ?: "")
         if (validator == null) {
             code.add("customValidators = emptyList(),\n")
         } else {
@@ -1733,11 +1848,39 @@ class SettingsProcessor(
         val title = annotation.argument("title")?.stringValue() ?: "Confirm Change"
         val message = annotation.argument("message")?.stringValue() ?: "Are you sure you want to change this setting?"
         val titleRes = annotation.argument("titleRes")?.intValue() ?: 0
+        val titleKey = effectiveLocalizationKey(
+            key = annotation.argument("titleKey")?.stringValue().orEmpty(),
+            resId = titleRes,
+            text = title,
+            defaultText = "Confirm Change",
+            defaultKey = "settings_confirm_change",
+        )
         val messageRes = annotation.argument("messageRes")?.intValue() ?: 0
+        val messageKey = effectiveLocalizationKey(
+            key = annotation.argument("messageKey")?.stringValue().orEmpty(),
+            resId = messageRes,
+            text = message,
+            defaultText = "Are you sure you want to change this setting?",
+            defaultKey = "settings_confirm_change_message",
+        )
         val confirmText = annotation.argument("confirmText")?.stringValue() ?: "Confirm"
         val confirmTextRes = annotation.argument("confirmTextRes")?.intValue() ?: 0
+        val confirmTextKey = effectiveLocalizationKey(
+            key = annotation.argument("confirmTextKey")?.stringValue().orEmpty(),
+            resId = confirmTextRes,
+            text = confirmText,
+            defaultText = "Confirm",
+            defaultKey = "settings_confirm",
+        )
         val cancelText = annotation.argument("cancelText")?.stringValue() ?: "Cancel"
         val cancelTextRes = annotation.argument("cancelTextRes")?.intValue() ?: 0
+        val cancelTextKey = effectiveLocalizationKey(
+            key = annotation.argument("cancelTextKey")?.stringValue().orEmpty(),
+            resId = cancelTextRes,
+            text = cancelText,
+            defaultText = "Cancel",
+            defaultKey = "settings_cancel",
+        )
         val dangerous = annotation.argument("isDangerous")?.booleanValue() ?: false
         return CodeBlock.builder()
             .add("%T(\n", confirmationConfig)
@@ -1745,11 +1888,15 @@ class SettingsProcessor(
             .add("title = %S,\n", title)
             .add("message = %S,\n", message)
             .add("titleRes = %L,\n", titleRes)
+            .add("titleKey = %S,\n", titleKey)
             .add("messageRes = %L,\n", messageRes)
+            .add("messageKey = %S,\n", messageKey)
             .add("confirmText = %S,\n", confirmText)
             .add("confirmTextRes = %L,\n", confirmTextRes)
+            .add("confirmTextKey = %S,\n", confirmTextKey)
             .add("cancelText = %S,\n", cancelText)
             .add("cancelTextRes = %L,\n", cancelTextRes)
+            .add("cancelTextKey = %S,\n", cancelTextKey)
             .add("isDangerous = %L,\n", dangerous)
             .unindent()
             .add(")")
@@ -1759,6 +1906,17 @@ class SettingsProcessor(
     private fun confirmResetMessage(property: KSPropertyDeclaration): String? {
         val annotation = property.getAnnotation(CONFIRM_RESET_ANNOTATION) ?: return null
         return annotation.argument("message")?.stringValue() ?: "Are you sure you want to reset this setting?"
+    }
+
+    private fun confirmResetKey(property: KSPropertyDeclaration): String {
+        val annotation = property.getAnnotation(CONFIRM_RESET_ANNOTATION) ?: return ""
+        val message = annotation.argument("message")?.stringValue() ?: "Are you sure you want to reset this setting?"
+        val key = annotation.argument("messageKey")?.stringValue().orEmpty()
+        return if (key.isBlank() && message == "Are you sure you want to reset this setting?") {
+            "settings_confirm_reset_message"
+        } else {
+            key
+        }
     }
 
     private fun collectionSetterValue(type: KSType): CodeBlock = when (type.declaration.qualifiedName?.asString()) {
@@ -2002,6 +2160,19 @@ class SettingsProcessor(
         "$typesPackage.TextInput" -> UiKind.TEXT_INPUT
         "$typesPackage.TimePickerType" -> UiKind.TIME_PICKER
         else -> UiKind.CUSTOM
+    }
+
+    private fun validateStringKey(
+        value: String,
+        field: String,
+        propertyName: String,
+        symbol: KSNode,
+        diagnostics: Diagnostics,
+    ) {
+        if (value.isBlank()) return
+        if (value != value.trim() || value.any { it.isWhitespace() }) {
+            diagnostics.error("$field must not contain whitespace or surrounding padding ('$propertyName')", symbol)
+        }
     }
 
     private fun keyFor(property: KSPropertyDeclaration, kind: AnnotationKind): String {

@@ -17,6 +17,10 @@ kotlin {
         minSdk = 21
         withJava()
 
+        androidResources {
+            enable = true
+        }
+
         optimization {
             consumerKeepRules.apply {
                 publish = true

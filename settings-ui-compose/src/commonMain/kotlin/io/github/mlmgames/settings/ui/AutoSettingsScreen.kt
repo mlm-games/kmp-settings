@@ -13,7 +13,10 @@ import io.github.mlmgames.settings.core.annotations.SettingAction
 import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.annotations.ValidationResult
 import io.github.mlmgames.settings.core.platform.currentPlatform
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
 import io.github.mlmgames.settings.core.resources.StringResourceProvider
+import io.github.mlmgames.settings.core.resources.getStringOrDefault
+import io.github.mlmgames.settings.core.resources.resolveString
 import io.github.mlmgames.settings.core.types.Button
 import io.github.mlmgames.settings.core.types.Dropdown
 import io.github.mlmgames.settings.core.types.Slider
@@ -49,6 +52,7 @@ data class CategoryConfig(
     val categoryClass: KClass<*>,
     val title: String,
     val titleRes: Int = 0,
+    val titleKey: String = "",
 )
 
 /**
@@ -154,7 +158,7 @@ fun <T> AutoSettingsScreen(
             throw cancelled
         } catch (error: Exception) {
             if (field.meta?.type == Toggle::class) toggleDrafts.remove(field.name)
-            showSnackbar(error.message ?: "Setting update failed")
+            showSnackbar(error.message ?: safeText(currentStringProvider, SettingsTextKeys.SETTING_UPDATE_FAILED, "Setting update failed"))
         }
     }
 
@@ -162,11 +166,11 @@ fun <T> AutoSettingsScreen(
         val field = currentSchema.fieldByName(requestedField.name) ?: return@handleSetValue
         val meta = field.meta ?: return@handleSetValue
         if (!isFieldVisible(field) || !isFieldEnabled(field)) {
-            showSnackbar("Setting is disabled")
+            showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SETTING_DISABLED, "Setting is disabled"))
             return@handleSetValue
         }
         if (newValue == null && !canWriteNull(field)) {
-            showSnackbar("This setting cannot be cleared")
+            showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SETTING_CANNOT_BE_CLEARED, "This setting cannot be cleared"))
             return@handleSetValue
         }
 
@@ -201,7 +205,7 @@ fun <T> AutoSettingsScreen(
         if (inFlightActions.containsKey(actionClass)) return@launchAction
         val resolved = currentSchema.fieldByName(field.name)
         if (resolved == null || !isFieldVisible(resolved) || !isFieldEnabled(resolved)) {
-            showSnackbar("Setting is disabled")
+            showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SETTING_DISABLED, "Setting is disabled"))
             return@launchAction
         }
 
@@ -212,7 +216,7 @@ fun <T> AutoSettingsScreen(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                showSnackbar(error.message ?: "Action failed")
+                showSnackbar(error.message ?: safeText(currentStringProvider, SettingsTextKeys.ACTION_FAILED, "Action failed"))
             } finally {
                 inFlightActions.remove(actionClass)
             }
@@ -221,15 +225,15 @@ fun <T> AutoSettingsScreen(
 
     val handleAction: (SettingField<T, *>) -> Unit = handleAction@{ field ->
         val meta = field.meta ?: run {
-            showSnackbar("Action unavailable")
+            showSnackbar(safeText(currentStringProvider, SettingsTextKeys.ACTION_UNAVAILABLE, "Action unavailable"))
             return@handleAction
         }
         val actionClass = meta.actionClass ?: run {
-            showSnackbar("Action unavailable")
+            showSnackbar(safeText(currentStringProvider, SettingsTextKeys.ACTION_UNAVAILABLE, "Action unavailable"))
             return@handleAction
         }
         if (!isFieldVisible(field) || !isFieldEnabled(field)) {
-            showSnackbar("Setting is disabled")
+            showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SETTING_DISABLED, "Setting is disabled"))
             return@handleAction
         }
         if (inFlightActions.containsKey(actionClass)) return@handleAction
@@ -246,11 +250,21 @@ fun <T> AutoSettingsScreen(
                 cancelText = "Cancel",
                 cancelTextRes = 0,
                 isDangerous = it.isDangerous,
+                titleKey = it.confirmationTitleKey,
+                messageKey = it.confirmationMessageKey,
+                confirmTextKey = SettingsTextKeys.CONFIRM,
+                cancelTextKey = SettingsTextKeys.CANCEL,
             )
         } ?: if (action == null) {
+            val actionTitle = safeResolvedTitle(meta, currentStringProvider)
             ConfirmationConfig(
                 title = "Run action",
-                message = "Run ${safeResolvedTitle(meta, currentStringProvider)}?",
+                message = safeText(
+                    currentStringProvider,
+                    SettingsTextKeys.RUN_ACTION_MESSAGE,
+                    "Run $actionTitle?",
+                    actionTitle,
+                ),
                 titleRes = 0,
                 messageRes = 0,
                 confirmText = "Run",
@@ -258,6 +272,9 @@ fun <T> AutoSettingsScreen(
                 cancelText = "Cancel",
                 cancelTextRes = 0,
                 isDangerous = true,
+                titleKey = SettingsTextKeys.RUN_ACTION,
+                confirmTextKey = SettingsTextKeys.RUN,
+                cancelTextKey = SettingsTextKeys.CANCEL,
             )
         } else {
             null
@@ -353,12 +370,20 @@ fun <T> AutoSettingsScreen(
                 val categoryKey = categoryClass.qualifiedName ?: categoryClass.toString()
                 val categoryConfig = categoryConfigMap[categoryClass]
                 val generatedTitleRes = currentSchema.categoryTitleResources[categoryClass] ?: 0
+                val generatedTitleKey = currentSchema.categoryTitleKeys[categoryClass].orEmpty()
+                val categoryFallback = categoryConfig?.title?.ifBlank {
+                    categoryClass.simpleName ?: safeText(currentStringProvider, SettingsTextKeys.CATEGORY, "Category")
+                } ?: categoryClass.simpleName ?: safeText(currentStringProvider, SettingsTextKeys.CATEGORY, "Category")
                 val categoryTitle = when {
+                    categoryConfig?.titleKey?.isNotBlank() == true ->
+                        safeResolveString(currentStringProvider, categoryConfig.titleKey, categoryConfig.titleRes, categoryFallback)
                     categoryConfig?.titleRes != 0 && categoryConfig != null ->
-                        safeResourceString(currentStringProvider, categoryConfig.titleRes, categoryClass.simpleName ?: "Category")
+                        safeResourceString(currentStringProvider, categoryConfig.titleRes, categoryFallback)
                     categoryConfig?.title?.isNotBlank() == true -> categoryConfig.title
-                    generatedTitleRes != 0 -> safeResourceString(currentStringProvider, generatedTitleRes, categoryClass.simpleName ?: "Category")
-                    else -> categoryClass.simpleName ?: "Unknown"
+                    generatedTitleKey.isNotBlank() ->
+                        safeResolveString(currentStringProvider, generatedTitleKey, generatedTitleRes, categoryFallback)
+                    generatedTitleRes != 0 -> safeResourceString(currentStringProvider, generatedTitleRes, categoryFallback)
+                    else -> categoryFallback
                 }
 
                 item(key = "header_$categoryKey") {
@@ -464,9 +489,9 @@ fun <T> AutoSettingsScreen(
                                                     val nullable = canWriteNull(field)
                                                     if (supportsDropdown(field, meta, currentValue)) {
                                                         val subtitle = if (nullable && index == null) {
-                                                            "(not set)"
+                                                            safeText(currentStringProvider, SettingsTextKeys.NOT_SET, "(not set)")
                                                         } else {
-                                                            options.getOrNull(index ?: -1) ?: "Unknown"
+                                                            options.getOrNull(index ?: -1) ?: safeText(currentStringProvider, SettingsTextKeys.UNKNOWN, "Unknown")
                                                         }
                                                         SettingsItem(
                                                             title = title,
@@ -496,7 +521,7 @@ fun <T> AutoSettingsScreen(
                                                             title = title,
                                                             subtitle = sliderValue?.let {
                                                                 formatSliderValue(it, meta.step)
-                                                            } ?: "(not set)",
+                                                            } ?: safeText(currentStringProvider, SettingsTextKeys.NOT_SET, "(not set)"),
                                                             description = description,
                                                             enabled = enabled,
                                                             onClick = {
@@ -531,8 +556,8 @@ fun <T> AutoSettingsScreen(
                                                     if (fieldValue is String || (fieldValue == null && canWriteNull(field))) {
                                                         SettingsItem(
                                                             title = title,
-                                                            subtitle = fieldValue?.ifBlank { "(empty)" }
-                                                                ?: "(not set)",
+                                                            subtitle = fieldValue?.ifBlank { safeText(currentStringProvider, SettingsTextKeys.EMPTY, "(empty)") }
+                                                                ?: safeText(currentStringProvider, SettingsTextKeys.NOT_SET, "(not set)"),
                                                             description = description,
                                                             enabled = enabled,
                                                             onClick = {
@@ -549,8 +574,10 @@ fun <T> AutoSettingsScreen(
                                                     if (fieldValue is Int || (fieldValue == null && canWriteNull(field))) {
                                                         SettingsItem(
                                                             title = title,
-                                                            subtitle = fieldValue?.let(::formatMinutesOfDay)
-                                                                ?: "(not set)",
+                                                            subtitle = fieldValue?.let {
+                                                                formatMinutesOfDay(it, provider = currentStringProvider)
+                                                            }
+                                                                ?: safeText(currentStringProvider, SettingsTextKeys.NOT_SET, "(not set)"),
                                                             description = description,
                                                             enabled = enabled,
                                                             onClick = {
@@ -618,7 +645,7 @@ fun <T> AutoSettingsScreen(
                         null
                     }
                     if (newValue == null) {
-                        showSnackbar("Invalid selection")
+                        showSnackbar(safeText(currentStringProvider, SettingsTextKeys.INVALID_SELECTION, "Invalid selection"))
                     } else {
                         handleSetValue(field, newValue)
                     }
@@ -652,7 +679,7 @@ fun <T> AutoSettingsScreen(
                         null
                     }
                     if (newValue == null) {
-                        showSnackbar("Invalid value")
+                        showSnackbar(safeText(currentStringProvider, SettingsTextKeys.INVALID_VALUE, "Invalid value"))
                     } else {
                         handleSetValue(field, newValue)
                     }
@@ -744,7 +771,7 @@ fun <T> AutoSettingsScreen(
                 if (pendingConfirmation != pending) return@SettingConfirmationDialog
                 if (pending.schema !== currentSchema) {
                     pendingConfirmation = null
-                    showSnackbar("Settings schema changed")
+                    showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SCHEMA_CHANGED, "Settings schema changed"))
                     return@SettingConfirmationDialog
                 }
                 val actionClass = pending.actionClass
@@ -758,7 +785,7 @@ fun <T> AutoSettingsScreen(
                         !isFieldEnabled(resolved)
                     ) {
                         pendingConfirmation = null
-                        showSnackbar("Action is no longer available")
+                        showSnackbar(safeText(currentStringProvider, SettingsTextKeys.ACTION_NO_LONGER_AVAILABLE, "Action is no longer available"))
                         return@SettingConfirmationDialog
                     }
                     pendingConfirmation = null
@@ -769,7 +796,7 @@ fun <T> AutoSettingsScreen(
                     if (resolved == null || pending.field !== resolved || meta == null) {
                         pendingConfirmation = null
                         clearToggleDraft(pending, toggleDrafts)
-                        showSnackbar("Setting is no longer available")
+                        showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SETTING_NO_LONGER_AVAILABLE, "Setting is no longer available"))
                         return@SettingConfirmationDialog
                     }
                     val validation = safeValidate(meta, pending.value, currentStringProvider)
@@ -782,12 +809,12 @@ fun <T> AutoSettingsScreen(
                     if (!isFieldVisible(resolved) || !isFieldEnabled(resolved)) {
                         pendingConfirmation = null
                         clearToggleDraft(pending, toggleDrafts)
-                        showSnackbar("Setting is disabled")
+                        showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SETTING_DISABLED, "Setting is disabled"))
                         return@SettingConfirmationDialog
                     }
                     if (pending.value == null && !canWriteNull(resolved)) {
                         pendingConfirmation = null
-                        showSnackbar("This setting cannot be cleared")
+                        showSnackbar(safeText(currentStringProvider, SettingsTextKeys.SETTING_CANNOT_BE_CLEARED, "This setting cannot be cleared"))
                         return@SettingConfirmationDialog
                     }
                     pendingConfirmation = null
@@ -840,23 +867,51 @@ private data class ToggleDraft(
 
 @Composable
 private fun UnsupportedSettingRow(title: String, description: String?) {
+    val provider = LocalStringResourceProvider.current
     SettingsItem(
         title = title,
-        subtitle = "Unsupported setting type",
+        subtitle = safeText(provider, SettingsTextKeys.UNSUPPORTED_SETTING_TYPE, "Unsupported setting type"),
         description = description,
         enabled = false,
         onClick = {},
     )
 }
 
+private fun safeText(
+    provider: StringResourceProvider,
+    key: String,
+    fallback: String,
+): String = runCatching { provider.getStringOrDefault(key, fallback) }.getOrElse { fallback }
+
+private fun safeText(
+    provider: StringResourceProvider,
+    key: String,
+    fallback: String,
+    vararg formatArgs: Any,
+): String = runCatching { provider.getStringOrDefault(key, fallback, *formatArgs) }.getOrElse { fallback }
+
 private fun safeResourceString(
     provider: StringResourceProvider,
     resource: Int,
     fallback: String,
-): String = if (resource == 0) fallback else runCatching { provider.getString(resource) }.getOrElse { fallback }
+): String = if (resource == 0) {
+    fallback
+} else {
+    runCatching { provider.getStringOrDefault(resource, fallback) }.getOrElse { fallback }
+}
+
+private fun safeResolveString(
+    provider: StringResourceProvider,
+    key: String,
+    resource: Int,
+    fallback: String,
+): String = runCatching { provider.resolveString(key, resource, fallback) }.getOrElse { fallback }
 
 private fun safeResolvedTitle(meta: SettingMeta, provider: StringResourceProvider): String =
-    runCatching { meta.resolvedTitle(provider) }.getOrElse { meta.title.ifBlank { "Setting" } }
+    runCatching { meta.resolvedTitle(provider) }.getOrNull()
+        ?.ifBlank { meta.title }
+        ?.ifBlank { safeText(provider, SettingsTextKeys.SETTING, "Setting") }
+        ?: meta.title.ifBlank { safeText(provider, SettingsTextKeys.SETTING, "Setting") }
 
 private fun safeResolvedDescription(meta: SettingMeta, provider: StringResourceProvider): String =
     runCatching { meta.resolvedDescription(provider) }.getOrElse { meta.description }
@@ -870,7 +925,10 @@ private fun safeValidate(
 } catch (cancelled: CancellationException) {
     throw cancelled
 } catch (_: Exception) {
-    ValidationResult.Invalid("Validation unavailable")
+    ValidationResult.Invalid(
+        message = safeText(provider, SettingsTextKeys.VALIDATION_UNAVAILABLE, "Validation unavailable"),
+        messageKey = SettingsTextKeys.VALIDATION_UNAVAILABLE,
+    )
 }
 
 private fun <T> supportsDropdown(
@@ -930,7 +988,9 @@ internal fun resolveDropdownLabels(
         emptyList()
     }
 
-    if (meta.optionsRes != 0 && declaredOptions.isNotEmpty() && resolvedOptions.size != declaredOptions.size) {
+    if ((meta.optionsKey.isNotBlank() || meta.optionsRes != 0) &&
+        declaredOptions.isNotEmpty() && resolvedOptions.size != declaredOptions.size
+    ) {
         return fieldOptions ?: declaredOptions
     }
     if (resolvedOptions.isEmpty()) {
@@ -951,14 +1011,22 @@ internal fun formatSliderValue(value: Float, step: Float): String {
     }
 }
 
-private fun formatMinutesOfDay(totalMinutes: Int, use24Hour: Boolean = true): String {
+private fun formatMinutesOfDay(
+    totalMinutes: Int,
+    use24Hour: Boolean = true,
+    provider: StringResourceProvider,
+): String {
     val clamped = totalMinutes.coerceIn(0, 1439)
     val hour = clamped / 60
     val minute = clamped % 60
     return if (use24Hour) {
         "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
     } else {
-        val suffix = if (hour < 12) "AM" else "PM"
+        val suffix = safeText(
+            provider,
+            if (hour < 12) SettingsTextKeys.AM else SettingsTextKeys.PM,
+            if (hour < 12) "AM" else "PM",
+        )
         val hour12 = when (val h = hour % 12) {
             0 -> 12
             else -> h

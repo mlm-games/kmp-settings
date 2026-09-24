@@ -14,5 +14,9 @@ annotation class RequiresConfirmation(
     val confirmTextRes: Int = 0,
     val cancelText: String = "Cancel",
     val cancelTextRes: Int = 0,
-    val isDangerous: Boolean = false
+    val isDangerous: Boolean = false,
+    val titleKey: String = "",
+    val messageKey: String = "",
+    val confirmTextKey: String = "",
+    val cancelTextKey: String = ""
 )

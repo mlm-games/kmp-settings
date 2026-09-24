@@ -142,6 +142,44 @@ Create the `DataStore` in platform code and pass it into shared code. Android us
 `createSettingsDataStore("settings")`. The library keeps one active store per
 canonical file and rejects path-like store names.
 
+### Localized settings metadata
+
+Use stable string keys for metadata that must be translated. Keys are resolved by
+`StringResourceProvider` before legacy resource IDs and literal fallbacks:
+
+```kotlin
+@Setting(
+    titleKey = "settings.appearance.dark_mode",
+    descriptionKey = "settings.appearance.dark_mode.description",
+    optionsKey = "settings.appearance.theme.options",
+    category = Appearance::class,
+    type = Toggle::class,
+)
+val darkMode: Boolean = false
+```
+
+The same key API is available for categories, confirmation dialogs, and validation
+messages. Existing `title`, `titleRes`, and `descriptionRes` declarations remain
+supported for migration. On Android, provide a key-to-resource resolver when
+application resources use names different from the library defaults:
+
+```kotlin
+ProvideStringResources(
+    AndroidStringResourceProvider(context) { key ->
+        when (key) {
+            "settings.appearance.dark_mode" -> R.string.dark_mode
+            else -> 0
+        }
+    }
+) {
+    AutoSettingsScreen(/* ... */)
+}
+```
+
+`SettingsTextKeys` contains the built-in UI keys used by the generated settings
+screen and dialogs. The KSP processor warns when UI metadata relies only on
+literal text.
+
 ## Usage
 
 ### Supported Field Types

@@ -5,6 +5,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
+import io.github.mlmgames.settings.ui.LocalStringResourceProvider
+import io.github.mlmgames.settings.ui.components.resolveSettingsText
 import io.github.mlmgames.settings.ui.formatSliderValue
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -44,6 +47,7 @@ fun SliderSettingDialog(
     allowNull: Boolean = false,
     onClear: (() -> Unit)? = null,
 ) {
+    val provider = LocalStringResourceProvider.current
     var safeMin = if (min.isFinite()) min else 0f
     var safeMax = if (max.isFinite()) max else Float.MAX_VALUE / 2f
     if (safeMin > Float.MAX_VALUE / 2f) safeMin = Float.MAX_VALUE / 2f
@@ -71,17 +75,31 @@ fun SliderSettingDialog(
         title = title,
         confirmButton = {
             TextButton(onClick = { onValueSelected(sliderValue) }) {
-                Text("Apply")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.APPLY,
+                        "Apply",
+                    )
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.CANCEL,
+                        "Cancel",
+                    )
+                )
             }
         }
     ) {
-        val formatted = remember(sliderValue, safeStep, currentValue) {
-            if (currentValue == null && sliderValue == safeMin) "(not set)" else formatSliderValue(sliderValue, safeStep)
+        val formatted = remember(sliderValue, safeStep, currentValue, provider) {
+            if (currentValue == null && sliderValue == safeMin) {
+                provider.resolveSettingsText(SettingsTextKeys.NOT_SET, "(not set)")
+            } else {
+                formatSliderValue(sliderValue, safeStep)
+            }
         }
         Text(
             text = formatted,
@@ -120,7 +138,12 @@ fun SliderSettingDialog(
 
         if (allowNull && onClear != null) {
             TextButton(onClick = onClear) {
-                Text("Clear")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.CLEAR,
+                        "Clear",
+                    )
+                )
             }
         }
     }

@@ -13,6 +13,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
+import io.github.mlmgames.settings.core.resources.StringResourceProvider
+import io.github.mlmgames.settings.core.resources.getStringOrDefault
+import io.github.mlmgames.settings.ui.LocalStringResourceProvider
 
 @Composable
 fun SettingsSection(
@@ -123,6 +127,18 @@ fun SettingsItem(
     }
 }
 
+internal fun StringResourceProvider.resolveSettingsText(
+    key: String,
+    fallback: String,
+    vararg formatArgs: Any,
+): String = runCatching {
+    if (formatArgs.isEmpty()) {
+        getStringOrDefault(key, fallback)
+    } else {
+        getStringOrDefault(key, fallback, *formatArgs)
+    }
+}.getOrDefault(fallback)
+
 @Composable
 fun SettingsToggle(
     title: String,
@@ -191,6 +207,7 @@ fun SettingsNullableToggle(
     onCheckedChange: (Boolean) -> Unit,
     onClear: () -> Unit,
 ) {
+    val provider = LocalStringResourceProvider.current
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
@@ -243,7 +260,10 @@ fun SettingsNullableToggle(
                     }
                     if (checked == null) {
                         Text(
-                            text = "Not set",
+                            text = provider.resolveSettingsText(
+                                SettingsTextKeys.NOT_SET,
+                                "Not set",
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -255,7 +275,12 @@ fun SettingsNullableToggle(
                 onClick = onClear,
                 enabled = enabled,
             ) {
-                Text("Clear")
+                Text(
+                    provider.resolveSettingsText(
+                        SettingsTextKeys.CLEAR,
+                        "Clear",
+                    )
+                )
             }
         }
     }

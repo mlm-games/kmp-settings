@@ -38,6 +38,10 @@ interface SettingAction {
     /** Confirmation dialog message */
     val confirmationMessage: String get() = "Are you sure?"
 
+    val confirmationTitleKey: String get() = ""
+
+    val confirmationMessageKey: String get() = ""
+
     /** Whether this is a dangerous/destructive action */
     val isDangerous: Boolean get() = false
 }

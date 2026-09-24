@@ -3,7 +3,9 @@ package io.github.mlmgames.settings.ui.dialogs
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import io.github.mlmgames.settings.core.ConfirmationConfig
+import io.github.mlmgames.settings.core.resources.SettingsTextKeys
 import io.github.mlmgames.settings.ui.LocalStringResourceProvider
+import io.github.mlmgames.settings.ui.components.resolveSettingsText
 
 @Composable
 fun SettingConfirmationDialog(
@@ -57,6 +59,17 @@ fun ConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val provider = LocalStringResourceProvider.current
+    val resolvedConfirmText = if (confirmText == "Confirm") {
+        provider.resolveSettingsText(SettingsTextKeys.CONFIRM, confirmText)
+    } else {
+        confirmText
+    }
+    val resolvedDismissText = if (dismissText == "Cancel") {
+        provider.resolveSettingsText(SettingsTextKeys.CANCEL, dismissText)
+    } else {
+        dismissText
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -72,12 +85,12 @@ fun ConfirmationDialog(
                     ButtonDefaults.textButtonColors()
                 }
             ) {
-                Text(confirmText)
+                Text(resolvedConfirmText)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(dismissText)
+                Text(resolvedDismissText)
             }
         }
     )

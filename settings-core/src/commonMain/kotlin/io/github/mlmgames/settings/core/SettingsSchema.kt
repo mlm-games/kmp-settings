@@ -24,6 +24,9 @@ interface SettingsSchema<T> {
     val categoryTitleResources: Map<KClass<*>, Int>
         get() = emptyMap()
 
+    val categoryTitleKeys: Map<KClass<*>, String>
+        get() = emptyMap()
+
     /** Find field by property name */
     fun fieldByName(name: String): SettingField<T, *>? =
         fields.firstOrNull { it.name == name }

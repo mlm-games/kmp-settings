@@ -11,7 +11,8 @@ annotation class Range(
     val min: Double = -Double.MAX_VALUE,
     val max: Double = Double.MAX_VALUE,
     val errorMessage: String = "Value out of range",
-    val errorMessageRes: Int = 0
+    val errorMessageRes: Int = 0,
+    val errorMessageKey: String = ""
 )
 
 /**
@@ -23,7 +24,8 @@ annotation class Length(
     val min: Int = 0,
     val max: Int = Int.MAX_VALUE,
     val errorMessage: String = "Invalid length",
-    val errorMessageRes: Int = 0
+    val errorMessageRes: Int = 0,
+    val errorMessageKey: String = ""
 )
 
 /**
@@ -34,7 +36,8 @@ annotation class Length(
 annotation class Pattern(
     val regex: String,
     val errorMessage: String = "Invalid format",
-    val errorMessageRes: Int = 0
+    val errorMessageRes: Int = 0,
+    val errorMessageKey: String = ""
 )
 
 /**
@@ -44,7 +47,8 @@ annotation class Pattern(
 @Retention(AnnotationRetention.SOURCE)
 annotation class Required(
     val errorMessage: String = "This field is required",
-    val errorMessageRes: Int = 0
+    val errorMessageRes: Int = 0,
+    val errorMessageKey: String = ""
 )
 
 /**
@@ -67,6 +71,7 @@ sealed class ValidationResult {
     object Valid : ValidationResult()
     data class Invalid(
         val message: String,
-        val messageRes: Int = 0
+        val messageRes: Int = 0,
+        val messageKey: String = ""
     ) : ValidationResult()
 }

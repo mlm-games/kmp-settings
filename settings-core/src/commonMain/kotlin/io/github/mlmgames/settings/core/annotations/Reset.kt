@@ -13,5 +13,6 @@ annotation class NoReset
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.SOURCE)
 annotation class ConfirmReset(
-    val message: String = "Are you sure you want to reset this setting?"
+    val message: String = "Are you sure you want to reset this setting?",
+    val messageKey: String = ""
 )

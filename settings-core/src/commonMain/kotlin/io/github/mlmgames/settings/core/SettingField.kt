@@ -119,6 +119,9 @@ interface SettingField<T, V> {
     val resetConfirmation: String?
         get() = meta?.confirmReset
 
+    val resetConfirmationKey: String?
+        get() = meta?.confirmResetKey
+
     val isUnit: Boolean
         get() = false
 

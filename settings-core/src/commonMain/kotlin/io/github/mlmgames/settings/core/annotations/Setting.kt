@@ -70,4 +70,13 @@ annotation class Setting(
 
     /** Platforms where this setting should be visible. Empty = ALL platforms. */
     val platforms: Array<SettingPlatform> = [SettingPlatform.ALL],
+
+    /** Stable platform-independent key for the localized title */
+    val titleKey: String = "",
+
+    /** Stable platform-independent key for the localized description */
+    val descriptionKey: String = "",
+
+    /** Stable platform-independent key for the localized dropdown options */
+    val optionsKey: String = "",
 )

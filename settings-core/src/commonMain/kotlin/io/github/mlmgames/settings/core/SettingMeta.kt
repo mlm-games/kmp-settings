@@ -5,6 +5,8 @@ import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.annotations.SettingValidator
 import io.github.mlmgames.settings.core.annotations.ValidationResult
 import io.github.mlmgames.settings.core.resources.StringResourceProvider
+import io.github.mlmgames.settings.core.resources.resolveString
+import io.github.mlmgames.settings.core.resources.resolveStringArray
 import io.github.mlmgames.settings.core.types.SettingTypes
 import kotlin.reflect.KClass
 import kotlinx.coroutines.CancellationException
@@ -74,23 +76,29 @@ data class SettingMeta(
     val confirmReset: String? = null,
 
     val platforms: Set<SettingPlatform> = setOf(SettingPlatform.ALL),
+
+    val titleKey: String = "",
+    val descriptionKey: String = "",
+    val optionsKey: String = "",
+    val confirmResetKey: String = "",
     ) {
     val isBuiltInType: Boolean get() = SettingTypes.isBuiltIn(type)
 
     fun resolvedTitle(provider: StringResourceProvider): String =
-        if (titleRes != 0) provider.getString(titleRes) else title
+        provider.resolveString(titleKey, titleRes, title)
 
     fun resolvedDescription(provider: StringResourceProvider): String =
-        if (descriptionRes != 0) provider.getString(descriptionRes) else description
+        provider.resolveString(descriptionKey, descriptionRes, description)
 
     fun resolvedOptions(provider: StringResourceProvider): List<String> =
-        if (optionsRes != 0) provider.getStringArray(optionsRes) else options
+        provider.resolveStringArray(optionsKey, optionsRes, options)
 
     /**
      * Display labels for a dropdown row/dialog.
      *
-     * Precedence: explicit `options`/`optionsRes` overrides (aligned by index,
-     * so enum labels can be renamed/localized without touching storage) win;
+     * Precedence: explicit `options`/`optionsRes`/`optionsKey` overrides (aligned
+     * by index, so enum labels can be renamed/localized without touching storage)
+     * win;
      * otherwise the field's own labels (enums: humanized entry names).
      */
     fun dropdownLabels(
@@ -134,6 +142,7 @@ data class SettingMeta(
             if (isEmpty) {
                 return ValidationResult.Invalid(
                     message = resolveErrorMessage(rules, provider).ifBlank { "This field is required" },
+                    messageKey = rules.errorMessageKey,
                 )
             }
         }
@@ -145,6 +154,7 @@ data class SettingMeta(
             if (numValue.isNaN() || numValue !in range) {
                 return ValidationResult.Invalid(
                     message = resolveErrorMessage(rules, provider).ifBlank { "Value out of range" },
+                    messageKey = rules.errorMessageKey,
                 )
             }
         }
@@ -154,6 +164,7 @@ data class SettingMeta(
             if (strValue.length !in lengthRange) {
                 return ValidationResult.Invalid(
                     message = resolveErrorMessage(rules, provider).ifBlank { "Invalid length" },
+                    messageKey = rules.errorMessageKey,
                 )
             }
         }
@@ -163,6 +174,7 @@ data class SettingMeta(
             if (!pattern.matches(strValue)) {
                 return ValidationResult.Invalid(
                     message = resolveErrorMessage(rules, provider).ifBlank { "Invalid format" },
+                    messageKey = rules.errorMessageKey,
                 )
             }
         }
@@ -177,11 +189,12 @@ data class SettingMeta(
                 ValidationResult.Invalid("Validation failed: ${error.message ?: "unknown error"}")
             }
             if (result is ValidationResult.Invalid) {
-                return if (result.messageRes != 0) {
-                    ValidationResult.Invalid(provider.getString(result.messageRes), result.messageRes)
-                } else {
-                    result
-                }
+                val resolved = provider.resolveString(result.messageKey, result.messageRes, result.message)
+                return ValidationResult.Invalid(
+                    message = resolved,
+                    messageRes = result.messageRes,
+                    messageKey = result.messageKey,
+                )
             }
         }
 
@@ -189,8 +202,7 @@ data class SettingMeta(
     }
 
     private fun resolveErrorMessage(rules: ValidationRules, provider: StringResourceProvider): String =
-        if (rules.errorMessageRes != 0) provider.getString(rules.errorMessageRes)
-        else rules.errorMessage
+        provider.resolveString(rules.errorMessageKey, rules.errorMessageRes, rules.errorMessage)
 }
 
 data class ValidationRules(
@@ -201,6 +213,7 @@ data class ValidationRules(
     val errorMessage: String = "",
     val errorMessageRes: Int = 0,
     val customValidators: List<SettingValidator<*>> = emptyList(),
+    val errorMessageKey: String = "",
 ) {
     constructor(
         range: ClosedFloatingPointRange<Double>?,
@@ -230,16 +243,20 @@ data class ConfirmationConfig(
     val cancelText: String,
     val cancelTextRes: Int,
     val isDangerous: Boolean,
+    val titleKey: String = "",
+    val messageKey: String = "",
+    val confirmTextKey: String = "",
+    val cancelTextKey: String = "",
 ) {
     fun resolvedTitle(provider: StringResourceProvider): String =
-        if (titleRes != 0) provider.getString(titleRes) else title
+        provider.resolveString(titleKey, titleRes, title)
 
     fun resolvedMessage(provider: StringResourceProvider): String =
-        if (messageRes != 0) provider.getString(messageRes) else message
+        provider.resolveString(messageKey, messageRes, message)
 
     fun resolvedConfirmText(provider: StringResourceProvider): String =
-        if (confirmTextRes != 0) provider.getString(confirmTextRes) else confirmText
+        provider.resolveString(confirmTextKey, confirmTextRes, confirmText)
 
     fun resolvedCancelText(provider: StringResourceProvider): String =
-        if (cancelTextRes != 0) provider.getString(cancelTextRes) else cancelText
+        provider.resolveString(cancelTextKey, cancelTextRes, cancelText)
 }
