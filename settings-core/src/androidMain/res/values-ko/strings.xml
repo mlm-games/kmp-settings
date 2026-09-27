@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">유효성 검사 실패</string>
     <string name="settings_import_callback_failed">가져오기 콜백 실패</string>
     <string name="settings_export_callback_failed">내보내기 콜백 실패</string>
+    <string name="settings_remote_syncing">서버와 동기화 중</string>
+    <string name="settings_remote_synced">계정과 동기화됨</string>
+    <string name="settings_remote_unsupported">이 서버에서 지원되지 않음</string>
 </resources>

@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Validierung fehlgeschlagen</string>
     <string name="settings_import_callback_failed">Import-Callback fehlgeschlagen</string>
     <string name="settings_export_callback_failed">Export-Callback fehlgeschlagen</string>
+    <string name="settings_remote_syncing">Synchronisierung mit Server</string>
+    <string name="settings_remote_synced">Mit deinem Konto synchronisiert</string>
+    <string name="settings_remote_unsupported">Von diesem Server nicht unterstützt</string>
 </resources>

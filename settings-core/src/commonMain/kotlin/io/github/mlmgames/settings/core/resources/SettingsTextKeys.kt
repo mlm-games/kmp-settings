@@ -82,4 +82,7 @@ object SettingsTextKeys {
     const val VALIDATION_FAILED = "settings_validation_failed"
     const val IMPORT_CALLBACK_FAILED = "settings_import_callback_failed"
     const val EXPORT_CALLBACK_FAILED = "settings_export_callback_failed"
+    const val REMOTE_SYNCING = "settings_remote_syncing"
+    const val REMOTE_SYNCED = "settings_remote_synced"
+    const val REMOTE_UNSUPPORTED = "settings_remote_unsupported"
 }

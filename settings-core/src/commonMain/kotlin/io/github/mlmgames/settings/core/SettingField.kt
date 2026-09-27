@@ -63,6 +63,15 @@ interface SettingField<T, V> {
 
     fun fromUiToggleValue(value: Boolean): V? = null
 
+    /**
+     * Plain-text form of a value for transports that carry text, such as a remote
+     * settings store. Null when this field has no text representation.
+     */
+    fun toRemoteValue(value: V): String? = null
+
+    /** Inverse of [toRemoteValue]. Null when [remote] is not a value this field accepts. */
+    fun fromRemoteValue(remote: String): V? = null
+
     val capabilities: Set<SettingFieldCapability>
         get() = emptySet()
 

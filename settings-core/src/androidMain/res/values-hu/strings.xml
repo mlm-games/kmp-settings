@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Az érvényesítés nem sikerült</string>
     <string name="settings_import_callback_failed">Az importálás visszahívási függvénye nem sikerült</string>
     <string name="settings_export_callback_failed">Az exportálás visszahívási függvénye nem sikerült</string>
+    <string name="settings_remote_syncing">Szinkronizálás a kiszolgálóval</string>
+    <string name="settings_remote_synced">Szinkronizálva a fiókjával</string>
+    <string name="settings_remote_unsupported">Nem támogatott ezen a kiszolgálón</string>
 </resources>

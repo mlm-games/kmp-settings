@@ -36,6 +36,8 @@ class BooleanField<T>(
     override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
     override fun toUiToggleValue(model: T): Boolean = getter(model)
     override fun fromUiToggleValue(value: Boolean): Boolean = value
+    override fun toRemoteValue(value: Boolean): String = value.toString()
+    override fun fromRemoteValue(remote: String): Boolean? = remote.toBooleanStrictOrNull()
     override val capabilities: Set<SettingFieldCapability>
         get() = setOf(SettingFieldCapability.TOGGLE)
     override fun encodeValue(value: Boolean): String = FieldEncoding.encode(FieldEncoding.BOOLEAN, value.toString())
@@ -70,6 +72,8 @@ class IntField<T>(
         val rounded = value.roundToInt()
         return rounded.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
     }
+    override fun toRemoteValue(value: Int): String = value.toString()
+    override fun fromRemoteValue(remote: String): Int? = remote.toIntOrNull()
     override fun toUiDropdownIndex(model: T): Int? {
         val value = getter(model)
         return value.takeIf { dropdownIndexAllowed(meta, it) }
@@ -112,6 +116,8 @@ class LongField<T>(
         val rounded = value.roundToLong()
         return rounded.takeIf { it in Long.MIN_VALUE..Long.MAX_VALUE }
     }
+    override fun toRemoteValue(value: Long): String = value.toString()
+    override fun fromRemoteValue(remote: String): Long? = remote.toLongOrNull()
     override fun toUiDropdownIndex(model: T): Int? {
         val value = getter(model)
         if (value !in 0L..Int.MAX_VALUE.toLong()) return null
@@ -153,6 +159,9 @@ class FloatField<T>(
     override fun toUiSliderValue(model: T): Float? = getter(model).takeIf { it.isFinite() }
     override fun fromUiSliderValue(value: Float): Float? =
         value.takeIf { sliderInputAllowed(meta, it) }
+    override fun toRemoteValue(value: Float): String = value.toString()
+    override fun fromRemoteValue(remote: String): Float? =
+        remote.toFloatOrNull()?.takeIf { it.isFinite() }
     override fun toUiDropdownIndex(model: T): Int? {
         val value = getter(model)
         if (!value.isFinite() || value < 0f || value > Int.MAX_VALUE.toFloat()) return null
@@ -194,6 +203,9 @@ class DoubleField<T>(
     override fun toUiSliderValue(model: T): Float? = getter(model).toFloat().takeIf { it.isFinite() }
     override fun fromUiSliderValue(value: Float): Double? =
         value.takeIf { sliderInputAllowed(meta, it) }?.let(::uiFloatToDouble)
+    override fun toRemoteValue(value: Double): String = value.toString()
+    override fun fromRemoteValue(remote: String): Double? =
+        remote.toDoubleOrNull()?.takeIf { it.isFinite() }
     override fun toUiDropdownIndex(model: T): Int? {
         val value = getter(model)
         if (!value.isFinite() || value < 0.0 || value > Int.MAX_VALUE.toDouble()) return null
@@ -238,6 +250,8 @@ class StringField<T>(
     }
     override fun fromUiDropdownIndex(index: Int): String? =
         dropdownOptions(meta).getOrNull(index)
+    override fun toRemoteValue(value: String): String = value
+    override fun fromRemoteValue(remote: String): String = remote
     override fun getDropdownOptions(): List<String>? =
         dropdownOptions(meta).takeIf { it.isNotEmpty() }
     override val capabilities: Set<SettingFieldCapability>

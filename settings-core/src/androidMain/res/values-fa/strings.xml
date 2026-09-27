@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">اعتبارسنجی ناموفق بود</string>
     <string name="settings_import_callback_failed">فراخوان ورود ناموفق بود</string>
     <string name="settings_export_callback_failed">فراخوان صادرات ناموفق بود</string>
+    <string name="settings_remote_syncing">همگام‌سازی با سرور</string>
+    <string name="settings_remote_synced">با حساب شما همگام شده</string>
+    <string name="settings_remote_unsupported">پشتیبانی نمی‌شود توسط این سرور</string>
 </resources>

@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Valideringen misslyckades</string>
     <string name="settings_import_callback_failed">Importens återanropsfunktion misslyckades</string>
     <string name="settings_export_callback_failed">Exportens återanropsfunktion misslyckades</string>
+    <string name="settings_remote_syncing">Synkroniserar med servern</string>
+    <string name="settings_remote_synced">Synkroniserad med ditt konto</string>
+    <string name="settings_remote_unsupported">Stöds inte av den här servern</string>
 </resources>

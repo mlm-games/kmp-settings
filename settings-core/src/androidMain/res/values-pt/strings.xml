@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Falha na validação</string>
     <string name="settings_import_callback_failed">Falha no retorno de chamada da importação</string>
     <string name="settings_export_callback_failed">Falha no retorno de chamada da exportação</string>
+    <string name="settings_remote_syncing">A sincronizar com o servidor</string>
+    <string name="settings_remote_synced">Sincronizado com a sua conta</string>
+    <string name="settings_remote_unsupported">Não suportado por este servidor</string>
 </resources>

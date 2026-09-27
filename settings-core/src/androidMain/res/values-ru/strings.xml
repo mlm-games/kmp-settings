@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Проверка не пройдена</string>
     <string name="settings_import_callback_failed">Ошибка обратного вызова импорта</string>
     <string name="settings_export_callback_failed">Ошибка обратного вызова экспорта</string>
+    <string name="settings_remote_syncing">Синхронизация с сервером</string>
+    <string name="settings_remote_synced">Синхронизировано с вашей учётной записью</string>
+    <string name="settings_remote_unsupported">Не поддерживается этим сервером</string>
 </resources>

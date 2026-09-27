@@ -62,6 +62,7 @@ fun SettingsItem(
     enabled: Boolean = true,
     onClick: () -> Unit,
     trailingContent: @Composable (() -> Unit)? = null,
+    status: String? = null,
 ) {
     Surface(
         onClick = onClick,
@@ -120,6 +121,16 @@ fun SettingsItem(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                if (!status.isNullOrBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             trailingContent?.invoke()
@@ -146,6 +157,7 @@ fun SettingsToggle(
     description: String? = null,
     enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
+    status: String? = null,
 ) {
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -191,6 +203,13 @@ fun SettingsToggle(
                         },
                     )
                 }
+                if (!status.isNullOrBlank()) {
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             Switch(checked = checked, onCheckedChange = null, enabled = enabled)
@@ -206,6 +225,7 @@ fun SettingsNullableToggle(
     enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
     onClear: () -> Unit,
+    status: String? = null,
 ) {
     val provider = LocalStringResourceProvider.current
     Surface(
@@ -264,6 +284,13 @@ fun SettingsNullableToggle(
                                 SettingsTextKeys.NOT_SET,
                                 "Not set",
                             ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (!status.isNullOrBlank()) {
+                        Text(
+                            text = status,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

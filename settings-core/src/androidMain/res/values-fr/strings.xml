@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Échec de la validation</string>
     <string name="settings_import_callback_failed">Échec du rappel d’importation</string>
     <string name="settings_export_callback_failed">Échec du rappel d’exportation</string>
+    <string name="settings_remote_syncing">Synchronisation avec le serveur</string>
+    <string name="settings_remote_synced">Synchronisé avec votre compte</string>
+    <string name="settings_remote_unsupported">Non pris en charge par ce serveur</string>
 </resources>

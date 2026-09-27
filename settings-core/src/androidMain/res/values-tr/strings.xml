@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Doğrulama başarısız oldu</string>
     <string name="settings_import_callback_failed">İçe aktarma geri çağırma işlevi başarısız oldu</string>
     <string name="settings_export_callback_failed">Dışa aktarma geri çağırma işlevi başarısız oldu</string>
+    <string name="settings_remote_syncing">Sunucuyla eşitleniyor</string>
+    <string name="settings_remote_synced">Hesabınızla eşitlendi</string>
+    <string name="settings_remote_unsupported">Bu sunucu tarafından desteklenmiyor</string>
 </resources>

@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Η επικύρωση απέτυχε</string>
     <string name="settings_import_callback_failed">Η επανάκληση εισαγωγής απέτυχε</string>
     <string name="settings_export_callback_failed">Η επανάκληση εξαγωγής απέτυχε</string>
+    <string name="settings_remote_syncing">Συγχρονισμός με τον διακομιστή</string>
+    <string name="settings_remote_synced">Συγχρονισμένο με τον λογαριασμό σας</string>
+    <string name="settings_remote_unsupported">Δεν υποστηρίζεται από αυτόν τον διακομιστή</string>
 </resources>

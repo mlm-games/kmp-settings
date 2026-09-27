@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">האימות נכשל</string>
     <string name="settings_import_callback_failed">קריאת חזרה של ייבוא נכשלה</string>
     <string name="settings_export_callback_failed">קריאת חזרה של ייצוא נכשלה</string>
+    <string name="settings_remote_syncing">מסתנכרן עם השרת</string>
+    <string name="settings_remote_synced">מסונכרן עם החשבון שלך</string>
+    <string name="settings_remote_unsupported">לא נתמך בשרת זה</string>
 </resources>

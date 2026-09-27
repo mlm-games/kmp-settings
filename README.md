@@ -13,6 +13,7 @@ Type-safe settings management for Kotlin Multiplatform with declarative UI gener
 - **Auto-generated UI**: `AutoSettingsScreen` composable renders settings from schema with zero boilerplate
 - **Cross-platform**: Core supports Android, iOS, JVM (Desktop), Linux, and Wasm; the Compose UI currently targets Android, iOS, JVM, and Wasm
 - **Backup/restore**: JSON export/import with checksum validation and schema versioning
+- **Server-synced settings**: Mirror account-level preferences to a remote store, keeping an absent remote value distinct from a failed read
 - **Advanced features**: Field dependencies, validation rules, confirmation dialogs, undo/redo, reset management
 
 ## Installation
@@ -228,6 +229,81 @@ val notificationsEnabled: Boolean = false
 )
 val notificationSound: Boolean = true
 ```
+
+### Migrating a Setting That Changed Type
+
+`@RenamedFrom` covers a setting that changed name. When it changed *type* — a boolean toggle
+becoming a three-way enum, an int-encoded enum becoming a string one — use
+`addValueTransform`. The target is resolved through the schema, so no physical key has to be
+spelled out:
+
+```kotlin
+MigrationManager(dataStore, currentVersion = 3, schema = AppSettingsSchema)
+    .addValueTransform(
+        fromVersion = 2,
+        toVersion = 3,
+        oldKey = "block_media_previews",
+        oldKind = PreferenceKind.BOOLEAN,
+        newField = "mediaPreviews",
+    ) { blocked -> if (blocked == true) "Off" else "On" }
+```
+
+### Server-Synced Settings
+
+Some preferences belong to the account rather than the device. Implement `RemoteSettingsStore`
+over whatever transport you have, and `SettingsRemoteSync` handles the reconciliation:
+
+```kotlin
+val sync = SettingsRemoteSync(
+    repository = settingsRepository,
+    schema = AppSettingsSchema,
+    store = accountDataStore,
+    bindings = listOf(RemoteBinding(field = "mediaPreviews")),
+    pullPolicy = RemotePullPolicy.ONCE_PER_ATTACH,
+)
+```
+
+Attach it when the remote becomes reachable and detach it when it stops being so, which is
+what keeps a signed-out account from pushing at a backend it has no session with:
+
+```kotlin
+LaunchedEffect(activeId) { sync.attach(this) }
+DisposableEffect(Unit) { onDispose { sync.detach() } }
+```
+
+The store owns the shape of the remote document, including the read-modify-write that keeps
+sibling values in it intact. The library only owns the policy, and the parts callers
+otherwise get subtly wrong:
+
+- A field the remote does not hold is left alone. Absent is not a value, so it never overwrites
+  the local one.
+- A read that fails mirrors nothing. A transport error is not an empty remote, and treating it
+  as one writes local state to the server on a network blip.
+- An adopted value is not written straight back, so an attachment that changes nothing sends
+  nothing.
+- `RemotePullPolicy.ONCE_PER_ATTACH` is right for backends with no change notification;
+  `LIVE` also consumes `RemoteSettingsStore.changes`.
+- Throw `RemoteUnsupportedException` when the backend cannot carry a field at all, such as an
+  unimplemented event type. The local value stays editable and stops being synchronised.
+- `RemoteBinding(pull = false)` marks a push-only field the server mirrors but does not arbitrate.
+
+Enum, boolean, numeric and string fields cross the boundary in their stored text form, which is
+what the generated `toRemoteValue`/`fromRemoteValue` accessors provide. Anything else supplies
+a `RemoteCodec` on the binding.
+
+Pass `sync.states` to `AutoSettingsScreen` to show a status line on the bound rows:
+
+```kotlin
+AutoSettingsScreen(
+    schema = AppSettingsSchema,
+    value = settings,
+    onSet = viewModel::updateSetting,
+    remoteStates = sync.states.collectAsState().value,
+)
+```
+
+Only states worth surfacing render: `Syncing`, `Unsupported`, and `Failed(reason)`. A detached
+or fully mirrored field shows nothing.
 
 ### Validation & Confirmation
 

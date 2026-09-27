@@ -13,6 +13,7 @@ import io.github.mlmgames.settings.core.annotations.SettingAction
 import io.github.mlmgames.settings.core.annotations.SettingPlatform
 import io.github.mlmgames.settings.core.annotations.ValidationResult
 import io.github.mlmgames.settings.core.platform.currentPlatform
+import io.github.mlmgames.settings.core.remote.RemoteFieldState
 import io.github.mlmgames.settings.core.resources.SettingsTextKeys
 import io.github.mlmgames.settings.core.resources.StringResourceProvider
 import io.github.mlmgames.settings.core.resources.getStringOrDefault
@@ -68,6 +69,8 @@ data class CategoryConfig(
  * @param customTypeHandlers Custom type renderers
  * @param snackbarHostState External snackbar host state
  * @param actionTrailingContent Map of action classes to their trailing content
+ * @param remoteStates Per-field mirroring status from `SettingsRemoteSync.states`, shown as a
+ *   status line on rows whose field is bound to a remote store
  */
 @Composable
 fun <T> AutoSettingsScreen(
@@ -81,6 +84,7 @@ fun <T> AutoSettingsScreen(
     customTypeHandlers: List<CustomTypeHandler<T>> = emptyList(),
     snackbarHostState: SnackbarHostState? = null,
     actionTrailingContent: Map<KClass<out SettingAction>, @Composable () -> Unit> = emptyMap(),
+    remoteStates: Map<String, RemoteFieldState> = emptyMap(),
 ) {
     val stringProvider = LocalStringResourceProvider.current
     val scope = rememberCoroutineScope()
@@ -149,6 +153,9 @@ fun <T> AutoSettingsScreen(
     }
     val canWriteNull: (SettingField<T, *>) -> Boolean = { field ->
         field.supportsExplicitNull
+    }
+    val remoteStatus: (String) -> String? = { name ->
+        remoteStatusText(remoteStates[name], currentStringProvider)
     }
 
     val commitSet: (SettingField<T, *>, Any?) -> Unit = { field, newValue ->
@@ -406,6 +413,7 @@ fun <T> AutoSettingsScreen(
                                         val description = safeResolvedDescription(meta, currentStringProvider)
                                             .takeIf { it.isNotBlank() }
                                         val customHandler = customHandlerMap[meta.type]
+                                        val status = remoteStatus(field.name)
                                         if (customHandler != null) {
                                             customHandler.render(field, meta, currentValue, enabled) { name, newValue ->
                                                 val target = currentSchema.fieldByName(name)
@@ -448,6 +456,7 @@ fun <T> AutoSettingsScreen(
                                                                     toggleDrafts.remove(field.name)
                                                                     handleSetValue(field, null)
                                                                 },
+                                                                status = status,
                                                             )
                                                         } else {
                                                             SettingsToggle(
@@ -468,6 +477,7 @@ fun <T> AutoSettingsScreen(
                                                                         handleSetValue(field, converted)
                                                                     }
                                                                 },
+                                                                status = status,
                                                             )
                                                         }
                                                     } else {
@@ -501,6 +511,7 @@ fun <T> AutoSettingsScreen(
                                                             onClick = {
                                                                 openDialog(field, DialogKind.DROPDOWN)
                                                             },
+                                                            status = status,
                                                         )
                                                     } else {
                                                         UnsupportedSettingRow(title, description)
@@ -527,6 +538,7 @@ fun <T> AutoSettingsScreen(
                                                             onClick = {
                                                                 openDialog(field, DialogKind.SLIDER)
                                                             },
+                                                            status = status,
                                                         )
                                                     } else {
                                                         UnsupportedSettingRow(title, description)
@@ -563,6 +575,7 @@ fun <T> AutoSettingsScreen(
                                                             onClick = {
                                                                 openDialog(field, DialogKind.TEXT)
                                                             },
+                                                            status = status,
                                                         )
                                                     } else {
                                                         UnsupportedSettingRow(title, description)
@@ -583,6 +596,7 @@ fun <T> AutoSettingsScreen(
                                                             onClick = {
                                                                 openDialog(field, DialogKind.TIME)
                                                             },
+                                                            status = status,
                                                         )
                                                     } else {
                                                         UnsupportedSettingRow(title, description)
@@ -833,6 +847,23 @@ fun <T> AutoSettingsScreen(
 }
 
 private const val NULL_DROPDOWN_INDEX = -1
+
+/**
+ * Status line for a field bound to a remote store. Only states worth telling the user about
+ * produce text: a detached or fully mirrored field needs no annotation, and a failure carries
+ * its own reason.
+ */
+private fun remoteStatusText(
+    state: RemoteFieldState?,
+    provider: StringResourceProvider,
+): String? = when (state) {
+    null, RemoteFieldState.LocalOnly, RemoteFieldState.Synced -> null
+    RemoteFieldState.Syncing ->
+        safeText(provider, SettingsTextKeys.REMOTE_SYNCING, "Syncing with server")
+    RemoteFieldState.Unsupported ->
+        safeText(provider, SettingsTextKeys.REMOTE_UNSUPPORTED, "Not supported by this server")
+    is RemoteFieldState.Failed -> state.reason
+}
 
 private enum class DialogKind {
     DROPDOWN,

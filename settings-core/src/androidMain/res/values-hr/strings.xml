@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Provjera nije uspjela</string>
     <string name="settings_import_callback_failed">Povratni poziv za uvoz nije uspio</string>
     <string name="settings_export_callback_failed">Povratni poziv za izvoz nije uspio</string>
+    <string name="settings_remote_syncing">Sinkronizacija s poslužiteljem</string>
+    <string name="settings_remote_synced">Sinkronizirano s vašim računom</string>
+    <string name="settings_remote_unsupported">Ovaj poslužitelj ne podržava</string>
 </resources>

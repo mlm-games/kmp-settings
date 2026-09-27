@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">驗證失敗</string>
     <string name="settings_import_callback_failed">匯入回呼失敗</string>
     <string name="settings_export_callback_failed">匯出回呼失敗</string>
+    <string name="settings_remote_syncing">正在與伺服器同步</string>
+    <string name="settings_remote_synced">已與你的帳戶同步</string>
+    <string name="settings_remote_unsupported">此伺服器不支援</string>
 </resources>

@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Walidacja nie powiodła się</string>
     <string name="settings_import_callback_failed">Importowanie nie powiodło się</string>
     <string name="settings_export_callback_failed">Eksportowanie nie powiodło się</string>
+    <string name="settings_remote_syncing">Synchronizowanie z serwerem</string>
+    <string name="settings_remote_synced">Zsynchronizowano z kontem</string>
+    <string name="settings_remote_unsupported">Nieobsługiwane przez ten serwer</string>
 </resources>

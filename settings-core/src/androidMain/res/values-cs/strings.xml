@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Ověření se nezdařilo</string>
     <string name="settings_import_callback_failed">Zpětné volání importu se nezdařilo</string>
     <string name="settings_export_callback_failed">Zpětné volání exportu se nezdařilo</string>
+    <string name="settings_remote_syncing">Synchronizace s serverem</string>
+    <string name="settings_remote_synced">Synchronizováno s vaším účtem</string>
+    <string name="settings_remote_unsupported">Tento server to nepodporuje</string>
 </resources>

@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">فشل التحقق</string>
     <string name="settings_import_callback_failed">فشلت دالة الاستيراد</string>
     <string name="settings_export_callback_failed">فشلت دالة التصدير</string>
+    <string name="settings_remote_syncing">جارٍ المزامنة مع الخادم</string>
+    <string name="settings_remote_synced">تمت المزامنة مع حسابك</string>
+    <string name="settings_remote_unsupported">غير مدعوم من هذا الخادم</string>
 </resources>

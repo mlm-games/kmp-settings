@@ -13,8 +13,10 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import io.github.mlmgames.settings.core.PreferenceKind
 import io.github.mlmgames.settings.core.SettingFieldStorage
 import io.github.mlmgames.settings.core.SettingsSchema
+import io.github.mlmgames.settings.core.remote.RemoteCodec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -56,6 +58,46 @@ class MigrationManager(
 
     fun addKeyDeletion(fromVersion: Int, toVersion: Int, vararg keys: String): MigrationManager =
         addMigration(KeyDeletionMigration(fromVersion, toVersion, keys.toList()))
+
+    /**
+     * Rewrites a stored value into the shape a current field uses, for settings that changed
+     * type rather than name. [newField] is resolved through the schema, so no physical key
+     * has to be spelled out; [oldKey] and [oldKind] address the value being replaced, which
+     * the schema no longer knows about.
+     *
+     * [transform] receives the stored value and returns the replacement as text in the
+     * target field's own stored form, which the migration decodes and verifies. A null
+     * return leaves preferences untouched. [codec] overrides the conversion for fields whose
+     * built-in text form is not what should be stored.
+     *
+     * Requires a schema. Without one the target field cannot be resolved.
+     */
+    fun addValueTransform(
+        fromVersion: Int,
+        toVersion: Int,
+        oldKey: String,
+        oldKind: PreferenceKind,
+        newField: String,
+        codec: RemoteCodec? = null,
+        transform: (Any?) -> String?,
+    ): MigrationManager {
+        val target = schema?.fieldByName(newField)
+            ?: throw IllegalArgumentException(
+                "addValueTransform needs a schema to resolve '$newField'; " +
+                    "construct MigrationManager with one",
+            )
+        return addMigration(
+            ValueTransformMigration(
+                fromVersion = fromVersion,
+                toVersion = toVersion,
+                oldKey = oldKey,
+                oldKind = oldKind,
+                target = target,
+                codec = codec,
+                transform = transform,
+            ),
+        )
+    }
 
     suspend fun migrate(): MigrationResult {
         migrationMutex.lock()
@@ -130,7 +172,7 @@ class MigrationManager(
                         val chain = if (registeredMigrations.isEmpty()) {
                             completeVersionChain(applicable, storedVersion, currentVersion)
                         } else {
-                            applicable
+                            fillLeadingGap(applicable, storedVersion)
                         }
 
                         if (applicable.isEmpty() && effectiveMigrations.isNotEmpty()) {
@@ -209,6 +251,26 @@ class MigrationManager(
         }
         if (covered < currentVersion) result += VersionOnlyMigration(covered, currentVersion)
         return result
+    }
+
+    /**
+     * Inserts a no-op step over a leading version gap.
+     *
+     * A store written by a platform that never ran a manager has no recorded version, so the
+     * first registered migration always starts above it. That span is provably empty: it
+     * precedes the chain, so there is no migration that could have been missed there.
+     *
+     * An *interior* gap is left alone and reported by [findChainGaps], because it means a
+     * migration between two registered ones was forgotten, and quietly stepping over it
+     * would run the chain with a hole in it.
+     */
+    private fun fillLeadingGap(
+        migrations: List<Migration>,
+        storedVersion: Int,
+    ): List<Migration> {
+        val first = migrations.firstOrNull() ?: return migrations
+        if (first.fromVersion <= storedVersion) return migrations
+        return listOf(VersionOnlyMigration(storedVersion, first.fromVersion)) + migrations
     }
 
     private fun findChainGaps(
@@ -313,7 +375,7 @@ private fun physicalRenames(oldKey: String, newKey: String): List<PhysicalRename
     return result
 }
 
-private fun physicalKeyNames(key: String): Set<String> =
+internal fun physicalKeyNames(key: String): Set<String> =
     physicalRenames(key, key).mapTo(linkedSetOf()) { it.source }
 
 private class KeyRenameMigration(

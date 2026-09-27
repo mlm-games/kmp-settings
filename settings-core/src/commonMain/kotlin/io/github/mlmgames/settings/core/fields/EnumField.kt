@@ -41,6 +41,8 @@ class EnumField<T, E : Enum<E>>(
     override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
     override fun toUiDropdownIndex(model: T): Int? = enumValues.indexOf(getter(model)).takeIf { it >= 0 }
     override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index) ?: defaultValue
+    override fun toRemoteValue(value: E): String = value.name
+    override fun fromRemoteValue(remote: String): E? = enumValues.firstOrNull { it.name == remote }
     override fun getDropdownOptions(): List<String> = enumValues.map { formatEnumDisplayName(it.name) }
     override val capabilities: Set<SettingFieldCapability>
         get() = setOf(SettingFieldCapability.DROPDOWN)

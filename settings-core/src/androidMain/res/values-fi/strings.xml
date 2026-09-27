@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Validointi epäonnistui</string>
     <string name="settings_import_callback_failed">Tuonnin takaisinkutsu epäonnistui</string>
     <string name="settings_export_callback_failed">Viennin takaisinkutsu epäonnistui</string>
+    <string name="settings_remote_syncing">Synkronoidaan palvelimen kanssa</string>
+    <string name="settings_remote_synced">Synkronoitu tilillesi</string>
+    <string name="settings_remote_unsupported">Tätä palvelinta ei tueta</string>
 </resources>

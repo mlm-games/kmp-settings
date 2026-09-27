@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">検証に失敗しました</string>
     <string name="settings_import_callback_failed">インポートのコールバックに失敗しました</string>
     <string name="settings_export_callback_failed">エクスポートのコールバックに失敗しました</string>
+    <string name="settings_remote_syncing">サーバーと同期中</string>
+    <string name="settings_remote_synced">アカウントと同期済み</string>
+    <string name="settings_remote_unsupported">このサーバーでは非対応です</string>
 </resources>

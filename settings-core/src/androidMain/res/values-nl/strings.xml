@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Validatie mislukt</string>
     <string name="settings_import_callback_failed">Terugbelfunctie voor importeren is mislukt</string>
     <string name="settings_export_callback_failed">Terugbelfunctie voor exporteren is mislukt</string>
+    <string name="settings_remote_syncing">Synchroniseren met server</string>
+    <string name="settings_remote_synced">Gesynchroniseerd met je account</string>
+    <string name="settings_remote_unsupported">Niet ondersteund door deze server</string>
 </resources>

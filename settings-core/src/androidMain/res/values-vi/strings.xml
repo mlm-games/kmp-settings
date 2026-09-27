@@ -81,4 +81,7 @@
     <string name="settings_validation_failed">Xác thực thất bại</string>
     <string name="settings_import_callback_failed">Lỗi gọi lại nhập</string>
     <string name="settings_export_callback_failed">Lỗi gọi lại xuất</string>
+    <string name="settings_remote_syncing">Đang đồng bộ với máy chủ</string>
+    <string name="settings_remote_synced">Đã đồng bộ với tài khoản của bạn</string>
+    <string name="settings_remote_unsupported">Máy chủ này không hỗ trợ</string>
 </resources>

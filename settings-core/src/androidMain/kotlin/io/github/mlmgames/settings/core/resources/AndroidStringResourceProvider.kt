@@ -110,6 +110,9 @@ class AndroidStringResourceProvider(
             SettingsTextKeys.VALIDATION_FAILED -> R.string.settings_validation_failed
             SettingsTextKeys.IMPORT_CALLBACK_FAILED -> R.string.settings_import_callback_failed
             SettingsTextKeys.EXPORT_CALLBACK_FAILED -> R.string.settings_export_callback_failed
+            SettingsTextKeys.REMOTE_SYNCING -> R.string.settings_remote_syncing
+            SettingsTextKeys.REMOTE_SYNCED -> R.string.settings_remote_synced
+            SettingsTextKeys.REMOTE_UNSUPPORTED -> R.string.settings_remote_unsupported
             else -> 0
         }
     }
