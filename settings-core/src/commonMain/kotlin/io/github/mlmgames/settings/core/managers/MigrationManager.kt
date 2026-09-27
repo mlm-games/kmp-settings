@@ -61,9 +61,10 @@ class MigrationManager(
 
     /**
      * Rewrites a stored value into the shape a current field uses, for settings that changed
-     * type rather than name. [newField] is resolved through the schema, so no physical key
-     * has to be spelled out; [oldKey] and [oldKind] address the value being replaced, which
-     * the schema no longer knows about.
+     * type rather than name. [oldKey] is the DataStore key the old value lives under, which
+     * the schema no longer knows about. [newField] is the target field, given as either its
+     * property name or its key, and is resolved through the schema so no physical key has to
+     * be spelled out.
      *
      * [transform] receives the stored value and returns the replacement as text in the
      * target field's own stored form, which the migration decodes and verifies. A null
@@ -81,10 +82,17 @@ class MigrationManager(
         codec: RemoteCodec? = null,
         transform: (Any?) -> String?,
     ): MigrationManager {
-        val target = schema?.fieldByName(newField)
+        val activeSchema = schema
             ?: throw IllegalArgumentException(
-                "addValueTransform needs a schema to resolve '$newField'; " +
+                "addValueTransform cannot resolve '$newField' without a schema; " +
                     "construct MigrationManager with one",
+            )
+        val target = activeSchema.fieldByName(newField)
+            ?: activeSchema.fieldByKey(newField)
+            ?: throw IllegalArgumentException(
+                "addValueTransform cannot resolve '$newField'. Give the target field's property " +
+                    "name or its key; known fields: " +
+                    activeSchema.fields.joinToString { "${it.name} (${it.keyName})" },
             )
         return addMigration(
             ValueTransformMigration(

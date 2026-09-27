@@ -248,6 +248,10 @@ MigrationManager(dataStore, currentVersion = 3, schema = AppSettingsSchema)
     ) { blocked -> if (blocked == true) "Off" else "On" }
 ```
 
+`oldKey` is the DataStore key the old value lives under. `newField` is the target field and
+takes either its property name (`mediaPreviews`) or its key (`media_previews`); an
+unresolvable name is reported along with the fields that do exist.
+
 ### Server-Synced Settings
 
 Some preferences belong to the account rather than the device. Implement `RemoteSettingsStore`
