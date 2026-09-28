@@ -10,7 +10,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mlmgames.settings.core.resources.SettingsTextKeys
@@ -90,9 +89,7 @@ fun SettingsItem(
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    }
                 )
                 if (!subtitle.isNullOrBlank()) {
                     Text(
@@ -102,9 +99,7 @@ fun SettingsItem(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        }
                     )
                 }
                 if (!description.isNullOrBlank()) {
@@ -116,9 +111,7 @@ fun SettingsItem(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        }
                     )
                 }
                 if (!status.isNullOrBlank()) {
@@ -126,9 +119,7 @@ fun SettingsItem(
                     Text(
                         text = status,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
