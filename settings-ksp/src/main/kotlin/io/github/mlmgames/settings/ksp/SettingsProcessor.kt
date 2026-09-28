@@ -916,7 +916,11 @@ class SettingsProcessor(
         if (categoryAnnotation == null) {
             diagnostics.error("Category ${categoryDeclaration.simpleName.asString()} lacks @CategoryDefinition", property)
         }
-        val categoryTitleRes = categoryAnnotation?.argument("titleRes")?.intValue() ?: 0
+        val categoryTitleRes = categoryAnnotation?.let {
+            resourceIdArgument(
+                it, "titleRes", "titleKey", "category $propertyName", property, diagnostics,
+            )
+        } ?: 0
         val categoryTitleKey = categoryAnnotation?.argument("titleKey")?.stringValue() ?: ""
         if (categoryTitleRes < 0) diagnostics.error("Category titleRes must not be negative ('$propertyName')", property)
         validateStringKey(categoryTitleKey, "category titleKey", propertyName, property, diagnostics)
@@ -933,9 +937,13 @@ class SettingsProcessor(
         val uiKind = uiKind(typeClass)
         val title = annotation.argument("title")?.stringValue() ?: ""
         val description = annotation.argument("description")?.stringValue() ?: ""
-        val titleRes = annotation.argument("titleRes")?.intValue() ?: 0
+        val titleRes = resourceIdArgument(
+            annotation, "titleRes", "titleKey", "for '$propertyName'", property, diagnostics,
+        )
         val titleKey = annotation.argument("titleKey")?.stringValue() ?: ""
-        val descriptionRes = annotation.argument("descriptionRes")?.intValue() ?: 0
+        val descriptionRes = resourceIdArgument(
+            annotation, "descriptionRes", "descriptionKey", "for '$propertyName'", property, diagnostics,
+        )
         val descriptionKey = annotation.argument("descriptionKey")?.stringValue() ?: ""
         val key = keyFor(property, AnnotationKind.SETTING)
         val dependsOn = annotation.argument("dependsOn")?.stringValue() ?: ""
@@ -943,7 +951,9 @@ class SettingsProcessor(
         val max = annotation.argument("max")?.floatValue() ?: 100f
         val step = annotation.argument("step")?.floatValue() ?: 1f
         val options = stringListArgument(annotation, "options", diagnostics, propertyName)
-        val optionsRes = annotation.argument("optionsRes")?.intValue() ?: 0
+        val optionsRes = resourceIdArgument(
+            annotation, "optionsRes", "optionsKey", "for '$propertyName'", property, diagnostics,
+        )
         val optionsKey = annotation.argument("optionsKey")?.stringValue() ?: ""
         validateStringKey(titleKey, "titleKey", propertyName, property, diagnostics)
         validateStringKey(descriptionKey, "descriptionKey", propertyName, property, diagnostics)
@@ -2208,6 +2218,35 @@ class SettingsProcessor(
         is Int -> value
         is Number -> value.toInt()
         else -> null
+    }
+
+    /**
+     * Reads a resource-id annotation argument, reporting the values KSP cannot fold.
+     *
+     * KSP hands back a class reference for `R.string.foo`, not the integer the
+     * field holds, so the id is unrecoverable here and the generated meta would
+     * carry 0. The UI then resolves `titleKey`/`titleRes`/`title` with an empty
+     * key and a zero id and silently shows the English literal in every locale.
+     * Warn instead of degrading quietly, and name the replacement field.
+     */
+    private fun resourceIdArgument(
+        annotation: KSAnnotation,
+        name: String,
+        replacement: String,
+        subject: String,
+        symbol: KSNode,
+        diagnostics: Diagnostics,
+    ): Int {
+        val argument = annotation.argument(name) ?: return 0
+        argument.intValue()?.let { return it }
+        diagnostics.warn(
+            "$name = $subject cannot be resolved to a resource id at compile time, so " +
+                "the generated schema records 0 and the setting falls back to its English " +
+                "literal in every language. KSP does not constant-fold R.* references. " +
+                "Use $replacement (a String constant) with a StringResourceProvider instead.",
+            symbol,
+        )
+        return 0
     }
 
     private fun KSValueArgument.floatValue(): Float? = when (val value = value) {
