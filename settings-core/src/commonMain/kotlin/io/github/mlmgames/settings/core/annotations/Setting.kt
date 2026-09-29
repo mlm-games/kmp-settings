@@ -68,6 +68,12 @@ annotation class Setting(
     /** Resource array for localized dropdown options */
     val optionsRes: Int = 0,
 
+    /**
+     * BCP-47 tags an AppLanguage dropdown offers. Empty = every language the
+     * library knows. The "System" entry is always offered.
+     */
+    val languages: Array<String> = [],
+
     /** Platforms where this setting should be visible. Empty = ALL platforms. */
     val platforms: Array<SettingPlatform> = [SettingPlatform.ALL],
 

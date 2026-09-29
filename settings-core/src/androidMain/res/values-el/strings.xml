@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Συγχρονισμός με τον διακομιστή</string>
     <string name="settings_remote_synced">Συγχρονισμένο με τον λογαριασμό σας</string>
     <string name="settings_remote_unsupported">Δεν υποστηρίζεται από αυτόν τον διακομιστή</string>
+    <string name="settings_language">Γλώσσα</string>
+    <string name="settings_language_system">Σύστημα</string>
 </resources>

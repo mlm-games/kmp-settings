@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">جارٍ المزامنة مع الخادم</string>
     <string name="settings_remote_synced">تمت المزامنة مع حسابك</string>
     <string name="settings_remote_unsupported">غير مدعوم من هذا الخادم</string>
+    <string name="settings_language">اللغة</string>
+    <string name="settings_language_system">النظام</string>
 </resources>

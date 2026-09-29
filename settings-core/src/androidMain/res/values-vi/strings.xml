@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Đang đồng bộ với máy chủ</string>
     <string name="settings_remote_synced">Đã đồng bộ với tài khoản của bạn</string>
     <string name="settings_remote_unsupported">Máy chủ này không hỗ trợ</string>
+    <string name="settings_language">Ngôn ngữ</string>
+    <string name="settings_language_system">Hệ thống</string>
 </resources>

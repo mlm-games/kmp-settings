@@ -1008,7 +1008,7 @@ internal fun resolveDropdownLabels(
     provider: StringResourceProvider,
 ): List<String> {
     val fieldOptions = try {
-        field.getDropdownOptions()
+        field.getDropdownOptions(provider)
     } catch (_: RuntimeException) {
         null
     }

@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Synkronoidaan palvelimen kanssa</string>
     <string name="settings_remote_synced">Synkronoitu tilillesi</string>
     <string name="settings_remote_unsupported">Tätä palvelinta ei tueta</string>
+    <string name="settings_language">Kieli</string>
+    <string name="settings_language_system">Järjestelmä</string>
 </resources>

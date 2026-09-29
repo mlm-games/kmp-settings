@@ -1,6 +1,7 @@
 package io.github.mlmgames.settings.integration
 
 import io.github.mlmgames.settings.core.annotations.Setting
+import io.github.mlmgames.settings.core.locale.AppLanguage
 import io.github.mlmgames.settings.core.types.Dropdown
 import kotlinx.serialization.Serializable
 
@@ -15,4 +16,13 @@ data class DropdownLabelSettings(
         optionsKey = "settings.language.options",
     )
     val language: Int = 0,
+
+    @Setting(
+        title = "App language",
+        titleKey = "settings.app.language.title",
+        category = General::class,
+        type = Dropdown::class,
+        languages = ["en", "de", "fr"],
+    )
+    val appLanguage: AppLanguage = AppLanguage.System,
 )

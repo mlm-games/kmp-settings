@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Синхронізація із сервером</string>
     <string name="settings_remote_synced">Синхронізовано з вашим обліковим записом</string>
     <string name="settings_remote_unsupported">Не підтримується цим сервером</string>
+    <string name="settings_language">Мова</string>
+    <string name="settings_language_system">Система</string>
 </resources>

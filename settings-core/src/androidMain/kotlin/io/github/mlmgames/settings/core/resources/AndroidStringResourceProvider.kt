@@ -49,6 +49,8 @@ class AndroidStringResourceProvider(
             SettingsTextKeys.PM -> R.string.settings_pm
             SettingsTextKeys.SETTING -> R.string.settings
             SettingsTextKeys.CATEGORY -> R.string.settings_category
+            SettingsTextKeys.LANGUAGE -> R.string.settings_language
+            SettingsTextKeys.LANGUAGE_SYSTEM -> R.string.settings_language_system
             SettingsTextKeys.UNSUPPORTED_SETTING_TYPE -> R.string.settings_unsupported_type
             SettingsTextKeys.SETTING_UPDATE_FAILED -> R.string.settings_update_failed
             SettingsTextKeys.SETTING_DISABLED -> R.string.settings_disabled

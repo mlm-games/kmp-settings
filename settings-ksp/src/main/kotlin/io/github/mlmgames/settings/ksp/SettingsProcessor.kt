@@ -228,6 +228,7 @@ class SettingsProcessor(
         val options: List<String>,
         val optionsRes: Int,
         val optionsKey: String,
+        val languages: List<String>,
         val actionClass: ClassName?,
         val platforms: List<String>,
         val validationMessage: ValidationMessage?,
@@ -955,6 +956,7 @@ class SettingsProcessor(
             annotation, "optionsRes", "optionsKey", "for '$propertyName'", property, diagnostics,
         )
         val optionsKey = annotation.argument("optionsKey")?.stringValue() ?: ""
+        val languages = stringListArgument(annotation, "languages", diagnostics, propertyName)
         validateStringKey(titleKey, "titleKey", propertyName, property, diagnostics)
         validateStringKey(descriptionKey, "descriptionKey", propertyName, property, diagnostics)
         validateStringKey(optionsKey, "optionsKey", propertyName, property, diagnostics)
@@ -985,6 +987,7 @@ class SettingsProcessor(
             options = options,
             optionsRes = optionsRes,
             optionsKey = optionsKey,
+            languages = languages,
             actionClass = actionClass,
             platforms = platforms,
             validationMessage = validationMessage,
@@ -1109,8 +1112,19 @@ class SettingsProcessor(
         validateSettingValidationAnnotations(property, plan, diagnostics)
         validateResetAndConfirmation(property, diagnostics)
 
+        if (config.languages.isNotEmpty() && config.uiKind != UiKind.DROPDOWN) {
+            diagnostics.error("@Setting '$name' languages= requires a Dropdown", property)
+        }
         if (config.uiKind == UiKind.DROPDOWN) {
             val baseName = plan.baseType.declaration.qualifiedName?.asString()
+            if (config.languages.isNotEmpty() &&
+                baseName != "io.github.mlmgames.settings.core.locale.AppLanguage"
+            ) {
+                diagnostics.error(
+                    "@Setting '$name' languages= is only valid on an AppLanguage dropdown",
+                    property,
+                )
+            }
             if (baseName in setOf("kotlin.Int", "kotlin.Long", "kotlin.Float", "kotlin.Double", "kotlin.String")) {
                 if (config.options.isEmpty() && config.optionsRes == 0 && config.optionsKey.isBlank()) {
                     diagnostics.error("Dropdown '$name' needs options=, optionsRes=, or optionsKey=", property)
@@ -1797,6 +1811,14 @@ class SettingsProcessor(
         .add("),\n")
         .add("optionsRes = %L,\n", config.optionsRes)
         .add("optionsKey = %S,\n", config.optionsKey)
+        .add("languages = listOf(")
+        .apply {
+            config.languages.forEachIndexed { index, language ->
+                if (index > 0) add(", ")
+                add("%S", language)
+            }
+        }
+        .add("),\n")
         .add("confirmResetKey = %S,\n", confirmResetKey(plan.property))
         .add("actionClass = %L,\n", config.actionClass?.let { CodeBlock.of("%T::class", it) } ?: CodeBlock.of("null"))
         .add("validation = %L,\n", buildValidationBlock(plan.property, config.validationMessage, plan.validator))

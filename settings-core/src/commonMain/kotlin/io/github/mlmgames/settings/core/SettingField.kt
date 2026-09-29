@@ -2,6 +2,7 @@ package io.github.mlmgames.settings.core
 
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
+import io.github.mlmgames.settings.core.resources.StringResourceProvider
 
 object SettingFieldStorage {
     const val NAMESPACE: String = "__kmp_settings_v2__:"
@@ -79,6 +80,12 @@ interface SettingField<T, V> {
 
     /** Get dropdown options. Returns null if not applicable. */
     fun getDropdownOptions(): List<String>? = null
+
+    /**
+     * Dropdown options resolved against [provider], for labels that need a
+     * localized resource. Defaults to [getDropdownOptions].
+     */
+    fun getDropdownOptions(provider: StringResourceProvider): List<String>? = getDropdownOptions()
 
     /** Encode a typed value to a type-prefixed string for backup export. */
     fun encodeValue(value: V): String? = null

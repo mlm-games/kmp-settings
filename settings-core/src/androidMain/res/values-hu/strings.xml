@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Szinkronizálás a kiszolgálóval</string>
     <string name="settings_remote_synced">Szinkronizálva a fiókjával</string>
     <string name="settings_remote_unsupported">Nem támogatott ezen a kiszolgálón</string>
+    <string name="settings_language">Nyelv</string>
+    <string name="settings_language_system">Rendszer</string>
 </resources>

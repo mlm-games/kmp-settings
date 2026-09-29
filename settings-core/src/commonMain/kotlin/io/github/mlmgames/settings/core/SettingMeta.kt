@@ -62,6 +62,9 @@ data class SettingMeta(
     val options: List<String>,
     val optionsRes: Int,
 
+    // Language tags an AppLanguage dropdown offers. Empty = all known languages.
+    val languages: List<String> = emptyList(),
+
     // Action (for Button type)
     val actionClass: KClass<out SettingAction>? = null,
 
@@ -107,7 +110,7 @@ data class SettingMeta(
     ): List<String> {
         val overrides = resolvedOptions(provider)
         if (overrides.isNotEmpty()) return overrides
-        return field.getDropdownOptions().orEmpty()
+        return field.getDropdownOptions(provider).orEmpty()
     }
 
     fun isVisibleOnPlatform(currentPlatform: SettingPlatform): Boolean {

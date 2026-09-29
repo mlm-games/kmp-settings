@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Synchroniseren met server</string>
     <string name="settings_remote_synced">Gesynchroniseerd met je account</string>
     <string name="settings_remote_unsupported">Niet ondersteund door deze server</string>
+    <string name="settings_language">Taal</string>
+    <string name="settings_language_system">Systeem</string>
 </resources>

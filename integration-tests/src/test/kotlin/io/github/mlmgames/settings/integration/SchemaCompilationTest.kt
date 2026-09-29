@@ -1,6 +1,8 @@
 package io.github.mlmgames.settings.integration
 
 import io.github.mlmgames.settings.core.annotations.SettingPlatform
+import io.github.mlmgames.settings.core.locale.AppLanguage
+import io.github.mlmgames.settings.core.resources.NoOpStringResourceProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -27,5 +29,17 @@ class SchemaCompilationTest {
         val language = requireNotNull(DropdownLabelSettingsSchema.fieldByName("language")).meta
         assertEquals("settings.language.title", language?.titleKey)
         assertEquals("settings.language.options", language?.optionsKey)
+    }
+
+    @Test
+    fun restrictsLanguageDropdownToDeclaredTags() {
+        val field = requireNotNull(DropdownLabelSettingsSchema.fieldByName("appLanguage"))
+        assertEquals(listOf("en", "de", "fr"), field.meta?.languages)
+        assertEquals(
+            listOf("System", "English", "Deutsch", "Français"),
+            field.getDropdownOptions(NoOpStringResourceProvider),
+        )
+        assertEquals(0, field.toUiDropdownIndex(DropdownLabelSettings()))
+        assertEquals(AppLanguage.English, field.fromUiDropdownIndex(1))
     }
 }

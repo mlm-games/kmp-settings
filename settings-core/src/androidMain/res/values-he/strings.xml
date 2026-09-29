@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">מסתנכרן עם השרת</string>
     <string name="settings_remote_synced">מסונכרן עם החשבון שלך</string>
     <string name="settings_remote_unsupported">לא נתמך בשרת זה</string>
+    <string name="settings_language">שפה</string>
+    <string name="settings_language_system">מערכת</string>
 </resources>

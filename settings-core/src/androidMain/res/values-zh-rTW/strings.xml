@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">正在與伺服器同步</string>
     <string name="settings_remote_synced">已與你的帳戶同步</string>
     <string name="settings_remote_unsupported">此伺服器不支援</string>
+    <string name="settings_language">語言</string>
+    <string name="settings_language_system">系統</string>
 </resources>

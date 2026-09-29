@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Sincronizzazione con il server</string>
     <string name="settings_remote_synced">Sincronizzato con il tuo account</string>
     <string name="settings_remote_unsupported">Non supportato da questo server</string>
+    <string name="settings_language">Lingua</string>
+    <string name="settings_language_system">Sistema</string>
 </resources>

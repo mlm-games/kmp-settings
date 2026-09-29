@@ -9,6 +9,9 @@ import io.github.mlmgames.settings.core.SettingField
 import io.github.mlmgames.settings.core.SettingFieldCapability
 import io.github.mlmgames.settings.core.SettingMeta
 import io.github.mlmgames.settings.core.formatEnumDisplayName
+import io.github.mlmgames.settings.core.locale.filterLanguages
+import io.github.mlmgames.settings.core.locale.languageLabel
+import io.github.mlmgames.settings.core.resources.StringResourceProvider
 
 class EnumField<T, E : Enum<E>>(
     override val name: String,
@@ -22,6 +25,9 @@ class EnumField<T, E : Enum<E>>(
     internal val key = stringPreferencesKey(storageKeyName(keyName, "enum"))
     private val legacyKey = stringPreferencesKey(keyName)
     override val physicalKeys: List<Preferences.Key<*>> = listOf(key, legacyKey)
+
+    /** Entries this dropdown offers; persistence keeps resolving the full set. */
+    private val visibleValues: List<E> = enumValues.filterLanguages(meta?.languages.orEmpty())
 
     override fun get(model: T): E = getter(model)
     override fun set(model: T, value: E): T = setter(model, value)
@@ -39,11 +45,13 @@ class EnumField<T, E : Enum<E>>(
         return enumValues.any { it.name == stored }
     }
     override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
-    override fun toUiDropdownIndex(model: T): Int? = enumValues.indexOf(getter(model)).takeIf { it >= 0 }
-    override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index) ?: defaultValue
+    override fun toUiDropdownIndex(model: T): Int? = visibleValues.indexOf(getter(model)).takeIf { it >= 0 }
+    override fun fromUiDropdownIndex(index: Int): E? = visibleValues.getOrNull(index) ?: defaultValue
     override fun toRemoteValue(value: E): String = value.name
     override fun fromRemoteValue(remote: String): E? = enumValues.firstOrNull { it.name == remote }
-    override fun getDropdownOptions(): List<String> = enumValues.map { formatEnumDisplayName(it.name) }
+    override fun getDropdownOptions(): List<String> = visibleValues.map { formatEnumDisplayName(it.name) }
+    override fun getDropdownOptions(provider: StringResourceProvider): List<String> =
+        visibleValues.map { it.languageLabel(provider) ?: formatEnumDisplayName(it.name) }
     override val capabilities: Set<SettingFieldCapability>
         get() = setOf(SettingFieldCapability.DROPDOWN)
     override fun encodeValue(value: E): String = FieldEncoding.encode(FieldEncoding.ENUM, value.name)
@@ -78,6 +86,9 @@ class NullableEnumField<T, E : Enum<E>>(
     private val legacyKey = stringPreferencesKey(keyName)
     override val physicalKeys: List<Preferences.Key<*>> = listOf(key, nullKey, legacyKey)
 
+    /** Entries this dropdown offers; persistence keeps resolving the full set. */
+    private val visibleValues: List<E> = enumValues.filterLanguages(meta?.languages.orEmpty())
+
     override fun get(model: T): E? = getter(model)
     override fun set(model: T, value: E?): T = setter(model, value)
     override fun read(prefs: Preferences): E? {
@@ -107,9 +118,11 @@ class NullableEnumField<T, E : Enum<E>>(
     override fun clear(prefs: MutablePreferences) { prefs.removeAny(physicalKeys) }
     override val supportsExplicitNull: Boolean
         get() = true
-    override fun toUiDropdownIndex(model: T): Int? = getter(model)?.let { enumValues.indexOf(it) }?.takeIf { it >= 0 }
-    override fun fromUiDropdownIndex(index: Int): E? = enumValues.getOrNull(index)
-    override fun getDropdownOptions(): List<String> = enumValues.map { formatEnumDisplayName(it.name) }
+    override fun toUiDropdownIndex(model: T): Int? = getter(model)?.let { visibleValues.indexOf(it) }?.takeIf { it >= 0 }
+    override fun fromUiDropdownIndex(index: Int): E? = visibleValues.getOrNull(index)
+    override fun getDropdownOptions(): List<String> = visibleValues.map { formatEnumDisplayName(it.name) }
+    override fun getDropdownOptions(provider: StringResourceProvider): List<String> =
+        visibleValues.map { it.languageLabel(provider) ?: formatEnumDisplayName(it.name) }
     override val capabilities: Set<SettingFieldCapability>
         get() = setOf(SettingFieldCapability.DROPDOWN)
     override fun encodeValue(value: E?): String = when {

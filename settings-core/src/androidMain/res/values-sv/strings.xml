@@ -84,4 +84,6 @@
     <string name="settings_remote_syncing">Synkroniserar med servern</string>
     <string name="settings_remote_synced">Synkroniserad med ditt konto</string>
     <string name="settings_remote_unsupported">Stöds inte av den här servern</string>
+    <string name="settings_language">Språk</string>
+    <string name="settings_language_system">System</string>
 </resources>

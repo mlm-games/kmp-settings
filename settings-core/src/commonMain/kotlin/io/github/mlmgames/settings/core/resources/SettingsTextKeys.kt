@@ -21,6 +21,8 @@ object SettingsTextKeys {
     const val PM = "settings_pm"
     const val SETTING = "settings"
     const val CATEGORY = "settings_category"
+    const val LANGUAGE = "settings_language"
+    const val LANGUAGE_SYSTEM = "settings_language_system"
     const val UNSUPPORTED_SETTING_TYPE = "settings_unsupported_type"
     const val SETTING_UPDATE_FAILED = "settings_update_failed"
     const val SETTING_DISABLED = "settings_disabled"
